@@ -1,73 +1,97 @@
-# 椰椰桌面时钟
+# Yeye Desktop Clock
 
-一个用 Tauri 2 + Rust 制作的轻量透明桌面宠物。当前版本为 `0.2.0`，支持 Windows 10/11 x64 与 Apple 芯片 Mac。
+A lightweight transparent desktop pet built with Tauri 2 and Rust. The current preview version is `0.2.0`, supporting Windows 10/11 x64 and Apple Silicon Macs.
 
-## 功能
+## Features
 
-- 透明、置顶、无边框的桌面宠物和 24 小时时钟
-- 默认 82% 的紧凑尺寸，可在 50%–125% 之间调节；控制台保持固定可读尺寸
-- 控制台透明度可调至 10%
-- 单击跳跃、拖动、自由漫游、待机挥手、休息和镜像
-- 可在“始终置顶”和“桌面层级”之间切换；桌面模式获得焦点时临时置顶，失焦后自动回到桌面
-- 边缘探头模式：靠边停留、悬停多露出身体、点击完整返回
-- 重新切分的单层手臂，可从肩部独立挥手，不再残留第二层静态手
-- 启动时番薯直接弹入，退出时快速收起，不再插入太阳/月亮过场
-- 每日闹钟、5 分钟稍后提醒和系统托盘
-- Open‑Meteo 天气（无需 API Key），每 30 分钟更新；可选液态玻璃卡片和 Meteocons 彩色拟物图标
-- 使用网络响应时间定期校准应用内显示时间，不修改系统时钟
-- Windows 和 macOS 下可检测可见窗口顶部并尝试跳上、站立和沿边缘移动
-- 单实例运行与可选开机启动
+- Transparent, borderless desktop pet with a 24-hour clock
+- Compact 82% default size, adjustable from 50% to 125%, while the control panel stays at a readable size
+- Control panel opacity adjustable down to 10%
+- Click-to-jump, dragging, free roaming, idle waving, resting, and mirroring
+- Switchable always-on-top and desktop-layer modes; desktop mode temporarily comes forward while focused and returns after losing focus
+- Edge-peek mode: the pet hides at a screen edge, reveals more on hover, and returns fully when clicked
+- A single reusable layered arm model with independent shoulder movement and no duplicate static arm
+- Direct spring-in startup and quick tuck-away exit animations, without sun or moon transitions
+- Daily alarm, five-minute snooze, and system tray controls
+- Open-Meteo weather with no API key, refreshed every 30 minutes, plus optional liquid-glass cards and illustrated Meteocons icons
+- Periodic display-time calibration using network response timestamps without changing the system clock
+- Visible-window edge detection on Windows and macOS, allowing the pet to jump onto, stand on, and move along window tops
+- Single-instance behavior and optional launch at login
 
-## 下载与运行
+## Download and Run
 
-在 [Releases](https://github.com/rzblood/desktop-pet-clock/releases) 下载对应文件：
+Download the appropriate file from [GitHub Releases](https://github.com/rzblood/desktop-pet-clock/releases):
 
-- Windows x64：`Yeye-Desktop-Clock-*-Windows-x64-Portable.exe`，无需安装，双击运行。
-- Apple 芯片 Mac：`Yeye-Desktop-Clock-*-macOS-Apple-Silicon.app.zip`。
+- Windows x64: `Yeye-Desktop-Clock-*-Windows-x64-Portable.exe` — no installation required.
+- Apple Silicon Mac: `Yeye-Desktop-Clock-*-macOS-Apple-Silicon.app.zip`.
 
-macOS 下载后解压并把应用拖到任意目录即可。当前开源构建没有付费代码签名，首次打开若被系统拦截，可在 Finder 中右键应用并选择“打开”。
+On macOS, unzip the archive and move the app wherever you prefer. The open-source build is ad-hoc signed rather than distributed with a paid Apple Developer certificate. If macOS blocks the first launch, right-click the app in Finder and choose **Open**.
 
-## 使用
+## Usage
 
-1. 单击宠物上方的时钟，或右键宠物，打开控制台。
-2. 拖动宠物移动位置；单击宠物让她跳跃。
-3. 在“外观与行为”中调节大小、窗口层级、自由漫游、边缘探头、休息、镜像和开机启动。
-4. 点击天气卡刷新天气；城市和其他设置会保存在系统应用配置目录。
-5. 托盘菜单可以重新显示宠物、切换安静休息或退出。
+1. Click the clock above the pet, or right-click the pet, to open the control panel.
+2. Drag the pet to move it; click the pet to make it jump.
+3. Use **Appearance & Behavior** to adjust size, window level, free roaming, edge peek, rest mode, mirroring, and launch at login.
+4. Click the weather card to refresh it. The city and other preferences are stored in the system application-config directory.
+5. Use the tray menu to show the pet again, toggle quiet rest mode, or quit.
 
-## 关于窗口攀爬
+## Window Climbing
 
-应用只读取可见窗口的位置和大小，不读取窗口标题或内容。把宠物脚底拖到另一个普通窗口顶部附近，松手后会自动对齐；自由漫游时会尝试跳上窗口并把窗口顶部当作平台。
+The app reads only the position and dimensions of visible windows; it does not read their titles or contents. Drag the pet so its feet are close to the top of a normal window and release it to snap onto the edge. During free roaming, it may also jump onto a window and treat its top edge as a platform.
 
-## 本地开发
+## Local Development
 
-需要 Node.js、Rust stable 以及 Tauri 对应平台的系统依赖。
+This is a Rust application with a web-based Tauri interface. Rust and Cargo compile the native application; Node.js prepares the frontend and provides convenient commands that invoke Tauri and Cargo in the correct order.
+
+Requirements:
+
+- Node.js
+- Stable Rust with Cargo
+- The platform-specific [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+Install frontend tooling and start the development app:
 
 ```bash
 npm install
 npm start
 ```
 
-运行全部测试：
+Run all frontend and Rust tests:
 
 ```bash
 npm run check
 ```
 
-本机构建免安装二进制或 macOS `.app`：
+Build a portable native executable, or a macOS `.app` bundle:
 
 ```bash
+npm run frontend:build
 npm run build
 npm run build:bundle
 ```
 
-推送 `v*` 标签会触发 GitHub Actions，只生成 Windows x64 便携 `.exe` 和 Apple Silicon `.app.zip`，并创建 GitHub Release；不生成安装器或 Intel Mac 版本。
+You can also run the Rust tests directly:
 
-项目演进、已知限制、测试清单和后续路线见 [维护与路线图](docs/MAINTENANCE.md)。
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
 
-## 隐私与许可
+For a direct native build, prepare the frontend first and then invoke Cargo:
 
-- 天气与对时会访问 Open‑Meteo；城市文字会发送给其地理编码接口。
-- 应用不上传闹钟、设置、窗口内容或使用记录。
-- 天气图标来自 [Meteocons](https://github.com/basmilius/meteocons)，使用 MIT 许可证；许可证副本位于 `assets/weather/METEOCONS-LICENSE.txt`。
-- 代码采用 MIT License。角色图片和其他美术资源不包含在 MIT 授权中，详见 [ASSET_LICENSE.md](ASSET_LICENSE.md)。
+```bash
+npm run frontend:build
+cargo build --release --manifest-path src-tauri/Cargo.toml
+```
+
+The `npm run build` wrapper calls `tauri build --no-bundle`; Tauri then invokes Cargo and includes the prepared frontend in the native application.
+
+Pushing a `v*` tag starts GitHub Actions. It creates only a portable Windows x64 `.exe` and an Apple Silicon `.app.zip`, then publishes a GitHub Release. It does not create installers or an Intel Mac build.
+
+See [Maintenance and Roadmap](docs/MAINTENANCE.md) for the development history, known limitations, release checklist, and planned improvements.
+
+## Privacy and Licensing
+
+- Weather and time calibration access Open-Meteo. The city text is sent to its geocoding service.
+- The app does not upload alarms, preferences, window contents, or usage history.
+- Weather icons come from [Meteocons](https://github.com/basmilius/meteocons) under the MIT License; a copy is included at `assets/weather/METEOCONS-LICENSE.txt`.
+- Source code is licensed under the MIT License. Character images and other artwork are excluded from the MIT grant; see [ASSET_LICENSE.md](ASSET_LICENSE.md).
