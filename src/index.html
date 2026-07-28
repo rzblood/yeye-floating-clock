@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>椰椰桌面时钟</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="stage" aria-label="椰椰桌面宠物">
+    <section id="clock-card" title="单击打开闹钟设置">
+      <span id="time">00:00:00</span>
+      <span id="date"></span>
+    </section>
+
+    <div id="celestial" class="celestial hidden">
+      <img id="celestial-image" src="../assets/sun-reference.png" alt="">
+      <div class="ray-ring"></div>
+    </div>
+
+    <div id="pet" aria-label="紫色番薯桌面宠物">
+      <img class="pet-layer pet-body" src="../assets/pet-cute-body.png" alt="">
+      <img class="pet-layer pet-arm left-arm" src="../assets/pet-cute-left-arm.png" alt="">
+      <img class="pet-layer pet-arm right-arm" src="../assets/pet-cute-right-arm.png" alt="">
+    </div>
+    <div id="speech" class="hidden"></div>
+
+    <section id="settings" class="panel hidden" aria-label="闹钟设置">
+      <header>
+        <strong>椰椰闹钟</strong>
+        <button id="close-settings" class="icon-button" aria-label="关闭">×</button>
+      </header>
+      <form id="alarm-form">
+        <input id="alarm-time" type="time" required>
+        <input id="alarm-label" maxlength="18" placeholder="闹钟名称">
+        <button type="submit" class="primary">添加</button>
+      </form>
+      <div id="alarm-list"></div>
+      <footer>
+        <label><input id="pause-motion" type="checkbox"> 安静休息</label>
+        <label><input id="autostart" type="checkbox"> 开机启动</label>
+        <button id="quit" class="text-button">退出</button>
+      </footer>
+    </section>
+
+    <section id="alarm-overlay" class="panel alarm hidden" role="alert">
+      <strong id="alarm-title">闹钟时间到</strong>
+      <div class="alarm-actions">
+        <button id="snooze" class="secondary">5分钟后</button>
+        <button id="stop-alarm" class="primary">停止</button>
+      </div>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>
