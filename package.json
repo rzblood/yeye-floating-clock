@@ -1,68 +1,19 @@
 {
   "name": "yeye-desktop-pet-clock",
-  "version": "1.0.0",
-  "description": "Windows desktop clock, alarm and interactive desktop pet",
-  "main": "src/main.js",
-  "author": "Codex",
-  "license": "UNLICENSED",
+  "version": "2.0.0",
+  "description": "Small cross-platform desktop clock, alarm, weather card and interactive pet",
+  "author": "rzblood",
+  "license": "MIT",
   "scripts": {
-    "start": "electron .",
+    "frontend:build": "node scripts/build-frontend.mjs",
+    "start": "tauri dev",
+    "dev": "tauri dev",
     "test": "node --test test/*.test.js",
-    "pack:win": "electron-builder --win portable --x64",
-    "dist:win": "electron-builder --win nsis portable --x64"
+    "check": "npm test && cargo test --manifest-path src-tauri/Cargo.toml",
+    "build": "tauri build --no-bundle",
+    "build:bundle": "tauri build"
   },
   "devDependencies": {
-    "electron": "^37.2.3",
-    "electron-builder": "^26.0.12"
-  },
-  "build": {
-    "appId": "com.yeye.desktopclock",
-    "productName": "椰椰桌面时钟",
-    "directories": {
-      "output": "release",
-      "buildResources": "build"
-    },
-    "files": [
-      "src/**/*",
-      "assets/pet.png",
-      "assets/pet-cute-body.png",
-      "assets/pet-cute-left-arm.png",
-      "assets/pet-cute-right-arm.png",
-      "assets/sun-reference.png",
-      "assets/moon-reference.png",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "scripts",
-        "to": "scripts",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "asar": true,
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        "portable",
-        "nsis"
-      ]
-    },
-    "nsis": {
-      "artifactName": "${productName}-${version}-${arch}-安装版.${ext}",
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "椰椰桌面时钟"
-    },
-    "portable": {
-      "artifactName": "${productName}-${version}-${arch}-免安装版.${ext}"
-    }
-  },
-  "allowScripts": {
-    "electron@37.10.3": true,
-    "electron-winstaller@5.4.0": true
+    "@tauri-apps/cli": "^2.11.4"
   }
 }

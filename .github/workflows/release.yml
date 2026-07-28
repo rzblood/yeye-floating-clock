@@ -1,0 +1,91 @@
+name: Build portable releases
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'dev' }}
+
+jobs:
+  windows:
+    name: Windows x64 portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npx tauri build --no-bundle
+      - name: Prepare portable executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Copy-Item "src-tauri/target/release/yeye-desktop-pet-clock.exe" "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-Windows-x64-Portable.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-portable
+          path: artifacts/*
+
+  macos:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            name: macOS Apple Silicon
+            suffix: Apple-Silicon
+          - runner: macos-15-intel
+            name: macOS Intel
+            suffix: Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build ad-hoc signed app bundle
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npx tauri build
+      - name: Prepare portable app archive
+        run: |
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent \
+            "src-tauri/target/release/bundle/macos/椰椰桌面时钟.app" \
+            "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-macOS-${{ matrix.suffix }}.app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.suffix }}
+          path: artifacts/*
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - windows
+      - macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "椰椰桌面时钟 ${{ github.ref_name }}"

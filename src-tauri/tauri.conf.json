@@ -1,0 +1,50 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "椰椰桌面时钟",
+  "version": "2.0.0",
+  "identifier": "com.rzblood.yeye.desktopclock",
+  "build": {
+    "beforeBuildCommand": "npm run frontend:build",
+    "beforeDevCommand": "npm run frontend:build",
+    "frontendDist": "../frontend-dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "椰椰桌面时钟",
+        "width": 282,
+        "height": 344,
+        "minWidth": 230,
+        "minHeight": 280,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "category": "Utility",
+    "shortDescription": "透明桌面时钟、天气、闹钟与互动桌宠",
+    "longDescription": "一款轻量、透明、可调大小的桌面时钟与互动桌宠。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
