@@ -32,7 +32,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null
           Copy-Item "src-tauri/target/release/yeye-desktop-pet-clock.exe" "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-Windows-x64-Portable.exe"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-x64-portable
           path: artifacts/*
@@ -60,7 +60,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "src-tauri/target/release/bundle/macos/椰椰桌面时钟.app" \
             "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-macOS-Apple-Silicon.app.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: macos-Apple-Silicon
           path: artifacts/*
@@ -73,7 +73,7 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
           path: artifacts
           merge-multiple: true
