@@ -1,4 +1,4 @@
-const previewSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, panelOpacity: .94, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+const previewSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 const previewTauri = {
   core: {
     invoke: async (command, args = {}) => {
@@ -21,7 +21,7 @@ const pet = $("#pet");
 const panel = $("#settings");
 const alarmOverlay = $("#alarm-overlay");
 
-let appSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, panelOpacity: .94, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+let appSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 let networkOffsetMs = 0;
 let weatherReport = null;
 let activeAlarmLabel = "";
@@ -29,6 +29,7 @@ let alarmTimer;
 let speechTimer;
 let saveTimer;
 let audioContext;
+let edgeHidden = false;
 
 const now = () => new Date(Date.now() + networkOffsetMs);
 function updateClock() {
@@ -83,18 +84,17 @@ function say(text, duration = 2400) {
   clearTimeout(speechTimer); speechTimer = setTimeout(() => $("#speech").classList.add("hidden"), duration);
 }
 function applySettings() {
-  document.documentElement.style.setProperty("--pet-opacity", appSettings.opacity);
   document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity);
   pet.classList.toggle("sleep", appSettings.sleeping);
   pet.classList.toggle("mirrored", appSettings.mirrored);
   $("#pause-motion").checked = appSettings.sleeping;
   $("#mirror-pet").checked = appSettings.mirrored;
   $("#snap-enabled").checked = appSettings.snapEnabled;
+  $("#edge-hide-enabled").checked = appSettings.edgeHideEnabled;
+  $("#window-level").value = appSettings.desktopLevel ? "desktop" : "top";
   $("#weather-enabled").checked = appSettings.weatherEnabled;
   $("#pet-scale").value = Math.round(appSettings.scale * 100);
   $("#scale-value").textContent = `${Math.round(appSettings.scale * 100)}%`;
-  $("#pet-opacity").value = Math.round(appSettings.opacity * 100);
-  $("#opacity-value").textContent = `${Math.round(appSettings.opacity * 100)}%`;
   $("#panel-opacity").value = Math.round(appSettings.panelOpacity * 100);
   $("#panel-opacity-value").textContent = `${Math.round(appSettings.panelOpacity * 100)}%`;
   $("#weather-city").value = appSettings.city;
@@ -137,7 +137,7 @@ function startAlarm(alarm) {
 function stopAlarm() { clearInterval(alarmTimer); alarmOverlay.classList.add("hidden"); pet.classList.remove("hidden"); say("好，已经关掉啦。"); }
 function intro() {
   pet.classList.add("intro");
-  setTimeout(() => { pet.classList.remove("intro"); say("椰椰来啦！"); }, 720);
+  setTimeout(() => { pet.classList.remove("intro"); say("椰椰来啦！"); }, 1050);
 }
 const openSettings = async () => {
   alarmOverlay.classList.add("hidden");
@@ -160,15 +160,52 @@ $("#snap-enabled").onchange = (event) => { appSettings.snapEnabled = event.targe
 $("#weather-enabled").onchange = (event) => { appSettings.weatherEnabled = event.target.checked; renderWeather(); scheduleSave(); if (appSettings.weatherEnabled && !weatherReport) refreshWeather(true); };
 $("#autostart").onchange = async (event) => { try { await invoke("set_autostart", { enabled: event.target.checked }); } catch (error) { event.target.checked = !event.target.checked; say(`开机启动设置失败：${error}`); } };
 $("#pet-scale").oninput = async (event) => { const value = Number(event.target.value) / 100; appSettings.scale = value; $("#scale-value").textContent = `${event.target.value}%`; try { appSettings.scale = await invoke("set_pet_scale", { value }); } catch (error) { $("#app-status").textContent = `调整大小失败：${error}`; } };
-$("#pet-opacity").oninput = (event) => { appSettings.opacity = Number(event.target.value) / 100; $("#opacity-value").textContent = `${event.target.value}%`; document.documentElement.style.setProperty("--pet-opacity", appSettings.opacity); scheduleSave(); };
 $("#panel-opacity").oninput = (event) => { appSettings.panelOpacity = Number(event.target.value) / 100; $("#panel-opacity-value").textContent = `${event.target.value}%`; document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity); scheduleSave(); };
-pet.onpointerdown = async () => {
-  pet.classList.add("dragging");
-  try { await invoke("start_drag"); }
-  finally { pet.classList.remove("dragging"); }
+$("#window-level").onchange = async (event) => {
+  appSettings.desktopLevel = event.target.value === "desktop";
+  try { await invoke("set_window_level", { desktop: appSettings.desktopLevel }); }
+  catch (error) { event.target.value = appSettings.desktopLevel ? "top" : "desktop"; appSettings.desktopLevel = !appSettings.desktopLevel; say(`窗口层级设置失败：${error}`); }
 };
-window.onpointerup = async () => { if (!pet.classList.contains("dragging")) return; pet.classList.remove("dragging"); await invoke("end_drag"); };
-pet.ondblclick = () => { invoke("jump"); say("跳！"); };
+$("#edge-hide-enabled").onchange = (event) => { appSettings.edgeHideEnabled = event.target.checked; if (!appSettings.edgeHideEnabled) { edgeHidden = false; invoke("reveal_from_edge"); } scheduleSave(); };
+
+let petGesture = null;
+function triggerJump() {
+  pet.classList.remove("jump-cheer");
+  void pet.offsetWidth;
+  pet.classList.add("jump-cheer");
+  setTimeout(() => pet.classList.remove("jump-cheer"), 760);
+  invoke("jump"); say("跳！");
+}
+pet.onpointerdown = (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  if (edgeHidden) {
+    edgeHidden = false;
+    invoke("reveal_from_edge");
+    return;
+  }
+  petGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
+  pet.setPointerCapture(event.pointerId);
+};
+pet.onpointermove = (event) => {
+  if (!petGesture || event.pointerId !== petGesture.id || petGesture.dragging) return;
+  if ((event.buttons & 1) === 0) return;
+  if (Math.hypot(event.clientX - petGesture.x, event.clientY - petGesture.y) < 18) return;
+  petGesture.dragging = true;
+  pet.classList.add("dragging");
+  if (pet.hasPointerCapture(event.pointerId)) pet.releasePointerCapture(event.pointerId);
+  invoke("start_drag").catch((error) => say(`拖动失败：${error}`)).finally(() => pet.classList.remove("dragging"));
+};
+pet.onpointerup = (event) => {
+  if (!petGesture || event.pointerId !== petGesture.id) return;
+  const wasDragging = petGesture.dragging;
+  petGesture = null;
+  if (pet.hasPointerCapture(event.pointerId)) pet.releasePointerCapture(event.pointerId);
+  if (wasDragging) invoke("end_drag"); else triggerJump();
+};
+pet.onpointercancel = () => { petGesture = null; pet.classList.remove("dragging"); };
+document.addEventListener("dragstart", (event) => event.preventDefault());
+document.addEventListener("selectstart", (event) => { if (!event.target.closest("input, textarea")) event.preventDefault(); });
 stage.oncontextmenu = (event) => { event.preventDefault(); openSettings(); };
 $("#stop-alarm").onclick = stopAlarm;
 $("#snooze").onclick = () => { stopAlarm(); setTimeout(() => startAlarm({ label: activeAlarmLabel }), 5 * 60 * 1000); say("好，五分钟后再叫你。"); };
@@ -180,6 +217,7 @@ async function init() {
   await listen("motion-state", (event) => pet.classList.toggle("walk", Boolean(event.payload)));
   await listen("sleep-state", (event) => { appSettings.sleeping = Boolean(event.payload); applySettings(); });
   await listen("snap-state", () => { $("#snap-toast").classList.remove("hidden"); setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200); });
+  await listen("edge-hidden", () => { edgeHidden = true; });
   await listen("play-exit", () => { panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("goodbye"); });
   const snapshot = await invoke("get_state"); appSettings = { ...appSettings, ...snapshot.settings }; $("#autostart").checked = snapshot.autostart;
   applySettings(); renderAlarms();

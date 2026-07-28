@@ -30,6 +30,7 @@ const PANEL_WIDTH: f64 = 390.0;
 const PANEL_HEIGHT: f64 = 520.0;
 const GRAVITY: f64 = 760.0;
 const SNAP_DISTANCE: f64 = 14.0;
+const EDGE_REVEAL_WIDTH: f64 = 46.0;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,8 +47,9 @@ struct Settings {
     alarms: Vec<Alarm>,
     sleeping: bool,
     scale: f64,
-    opacity: f64,
     panel_opacity: f64,
+    desktop_level: bool,
+    edge_hide_enabled: bool,
     mirrored: bool,
     snap_enabled: bool,
     weather_enabled: bool,
@@ -60,8 +62,9 @@ impl Default for Settings {
             alarms: Vec::new(),
             sleeping: false,
             scale: 0.82,
-            opacity: 1.0,
             panel_opacity: 0.94,
+            desktop_level: false,
+            edge_hide_enabled: false,
             mirrored: false,
             snap_enabled: true,
             weather_enabled: true,
@@ -109,6 +112,7 @@ struct AppData {
     obstacles: Arc<Mutex<Vec<Obstacle>>>,
     quitting: Arc<AtomicBool>,
     panel_open: AtomicBool,
+    edge_hidden: AtomicI64,
     last_drag_move_ms: AtomicI64,
     time_offset_ms: AtomicI64,
     config_path: PathBuf,
@@ -141,8 +145,7 @@ struct WeatherReport {
 
 fn sanitize_settings(mut settings: Settings) -> Settings {
     settings.scale = settings.scale.clamp(0.50, 1.25);
-    settings.opacity = settings.opacity.clamp(0.45, 1.0);
-    settings.panel_opacity = settings.panel_opacity.clamp(0.55, 1.0);
+    settings.panel_opacity = settings.panel_opacity.clamp(0.10, 1.0);
     settings.city = settings.city.trim().chars().take(40).collect();
     settings.alarms.truncate(30);
     settings
@@ -201,6 +204,68 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
         app.autolaunch().disable()
     }
     .map_err(|error| error.to_string())
+}
+
+fn apply_window_level(window: &WebviewWindow, desktop_level: bool) -> Result<(), String> {
+    if desktop_level {
+        window
+            .set_always_on_top(false)
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_bottom(true)
+            .map_err(|error| error.to_string())
+    } else {
+        window
+            .set_always_on_bottom(false)
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[tauri::command]
+fn set_window_level(
+    window: WebviewWindow,
+    desktop: bool,
+    data: State<AppData>,
+) -> Result<(), String> {
+    data.settings
+        .lock()
+        .map_err(|_| "设置状态不可用".to_string())?
+        .desktop_level = desktop;
+    if !data.panel_open.load(Ordering::Relaxed) {
+        apply_window_level(&window, desktop)?;
+    }
+    persist_settings(&data)
+}
+
+#[tauri::command]
+fn reveal_from_edge(window: WebviewWindow, data: State<AppData>) -> Result<bool, String> {
+    let side = data.edge_hidden.swap(0, Ordering::Relaxed);
+    if side == 0 {
+        return Ok(false);
+    }
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "找不到显示器".to_string())?;
+    let area = monitor.work_area();
+    let x = if side < 0 {
+        area.position.x
+    } else {
+        area.position.x + area.size.width as i32 - size.width as i32
+    };
+    window
+        .set_position(PhysicalPosition::new(x, position.y))
+        .map_err(|error| error.to_string())?;
+    if let Ok(mut motion) = data.motion.lock() {
+        motion.vx = if side < 0 { 34.0 } else { -34.0 };
+        motion.next_decision = Instant::now() + Duration::from_secs(2);
+    }
+    Ok(true)
 }
 
 fn epoch_ms() -> i64 {
@@ -263,6 +328,15 @@ fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Res
 
 #[tauri::command]
 fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Result<(), String> {
+    if open {
+        let _ = reveal_from_edge(window.clone(), data.clone());
+        window
+            .set_always_on_bottom(false)
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+    }
     let (width, height) = if open {
         if let Ok(Some(monitor)) = window.current_monitor() {
             let scale_factor = monitor.scale_factor();
@@ -286,6 +360,14 @@ fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Re
     };
     resize_anchored(&window, width, height, if open { 12 } else { 0 })?;
     data.panel_open.store(open, Ordering::Relaxed);
+    if !open {
+        let desktop_level = data
+            .settings
+            .lock()
+            .map(|settings| settings.desktop_level)
+            .unwrap_or(false);
+        apply_window_level(&window, desktop_level)?;
+    }
     Ok(())
 }
 
@@ -331,6 +413,9 @@ fn start_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String>
             motion.dragging = false;
             motion.vy = 0.0;
         }
+        if hide_near_screen_edge(&drag_window, &data).unwrap_or(false) {
+            break;
+        }
         if data
             .settings
             .lock()
@@ -355,6 +440,9 @@ fn end_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
         motion.dragging = false;
         motion.vy = 0.0;
     }
+    if hide_near_screen_edge(&window, &data)? {
+        return Ok(());
+    }
     if data
         .settings
         .lock()
@@ -372,7 +460,7 @@ fn jump(data: State<AppData>) -> Result<(), String> {
         .motion
         .lock()
         .map_err(|_| "运动状态不可用".to_string())?;
-    motion.vy = -360.0;
+    motion.vy = -520.0;
     motion.grounded = false;
     Ok(())
 }
@@ -392,13 +480,21 @@ fn ready(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "找不到显示器".to_string())?;
     let area = monitor.work_area();
-    let size = window.outer_size().map_err(|error| error.to_string())?;
-    let final_x = area.position.x + area.size.width as i32 - size.width as i32 - 28;
-    let final_y = area.position.y + area.size.height as i32 - size.height as i32;
+    let scale_factor = monitor.scale_factor();
+    let width = (BASE_WIDTH * scale * scale_factor).round() as i32;
+    let height = (BASE_HEIGHT * scale * scale_factor).round() as i32;
+    let final_x = area.position.x + area.size.width as i32 - width - 28;
+    let final_y = area.position.y + area.size.height as i32 - height;
     window
         .set_position(PhysicalPosition::new(final_x, final_y))
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
+    let desktop_level = data
+        .settings
+        .lock()
+        .map(|settings| settings.desktop_level)
+        .unwrap_or(false);
+    apply_window_level(&window, desktop_level)?;
     if let Ok(mut motion) = data.motion.lock() {
         motion.dragging = false;
     }
@@ -412,7 +508,7 @@ fn request_quit(app: AppHandle, window: WebviewWindow, data: State<AppData>) {
     }
     let _ = window.emit("play-exit", ());
     thread::spawn(move || {
-        thread::sleep(Duration::from_millis(430));
+        thread::sleep(Duration::from_millis(760));
         app.exit(0);
     });
 }
@@ -609,6 +705,41 @@ fn snap_to_nearest_window(
     Ok(())
 }
 
+fn hide_near_screen_edge(window: &WebviewWindow, data: &AppData) -> Result<bool, String> {
+    let enabled = data
+        .settings
+        .lock()
+        .map(|settings| settings.edge_hide_enabled)
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(false);
+    }
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "找不到显示器".to_string())?;
+    let area = monitor.work_area();
+    let left_distance = (position.x - area.position.x).abs();
+    let area_right = area.position.x + area.size.width as i32;
+    let right_distance = (area_right - position.x - size.width as i32).abs();
+    let reveal = (EDGE_REVEAL_WIDTH * monitor.scale_factor()).round() as i32;
+    let (side, x) = if left_distance <= 32 {
+        (-1, area.position.x - size.width as i32 + reveal)
+    } else if right_distance <= 32 {
+        (1, area_right - reveal)
+    } else {
+        return Ok(false);
+    };
+    data.edge_hidden.store(side, Ordering::Relaxed);
+    window
+        .set_position(PhysicalPosition::new(x, position.y))
+        .map_err(|error| error.to_string())?;
+    let _ = window.emit("edge-hidden", if side < 0 { "left" } else { "right" });
+    Ok(true)
+}
+
 #[cfg(target_os = "windows")]
 fn spawn_obstacle_watcher(obstacles: Arc<Mutex<Vec<Obstacle>>>, quitting: Arc<AtomicBool>) {
     use std::os::windows::process::CommandExt;
@@ -725,6 +856,9 @@ fn spawn_motion_loop(app: AppHandle) {
             if data.panel_open.load(Ordering::Relaxed) {
                 continue;
             }
+            if data.edge_hidden.load(Ordering::Relaxed) != 0 {
+                continue;
+            }
 
             let mut motion = match data.motion.lock() {
                 Ok(value) => value,
@@ -798,11 +932,27 @@ fn spawn_motion_loop(app: AppHandle) {
             let min_x = area.position.x as f64;
             let max_x = area.position.x as f64 + area.size.width as f64 - size.width as f64;
             if next_x <= min_x {
-                next_x = min_x;
-                motion.vx = motion.vx.abs().max(28.0);
+                if settings.edge_hide_enabled && motion.grounded {
+                    let reveal = EDGE_REVEAL_WIDTH * monitor.scale_factor();
+                    next_x = min_x - size.width as f64 + reveal;
+                    motion.vx = 0.0;
+                    data.edge_hidden.store(-1, Ordering::Relaxed);
+                    let _ = window.emit("edge-hidden", "left");
+                } else {
+                    next_x = min_x;
+                    motion.vx = motion.vx.abs().max(28.0);
+                }
             } else if next_x >= max_x {
-                next_x = max_x;
-                motion.vx = -motion.vx.abs().max(28.0);
+                if settings.edge_hide_enabled && motion.grounded {
+                    let reveal = EDGE_REVEAL_WIDTH * monitor.scale_factor();
+                    next_x = area.position.x as f64 + area.size.width as f64 - reveal;
+                    motion.vx = 0.0;
+                    data.edge_hidden.store(1, Ordering::Relaxed);
+                    let _ = window.emit("edge-hidden", "right");
+                } else {
+                    next_x = max_x;
+                    motion.vx = -motion.vx.abs().max(28.0);
+                }
             }
             let min_y = area.position.y as f64;
             if next_y < min_y {
@@ -846,6 +996,8 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             match event.id().as_ref() {
                 "show" => {
                     let _ = window.show();
+                    let data = app.state::<AppData>();
+                    let _ = reveal_from_edge(window.clone(), data);
                     let _ = window.set_focus();
                 }
                 "settings" => {
@@ -882,6 +1034,8 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             ) {
                 if let Some(window) = tray.app_handle().get_webview_window("main") {
                     let _ = window.show();
+                    let data = tray.app_handle().state::<AppData>();
+                    let _ = reveal_from_edge(window, data);
                 }
             }
         });
@@ -898,6 +1052,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
+                let data = app.state::<AppData>();
+                let _ = reveal_from_edge(window.clone(), data);
                 let _ = window.set_focus();
             }
         }))
@@ -920,6 +1076,7 @@ pub fn run() {
                 obstacles: obstacles.clone(),
                 quitting: quitting.clone(),
                 panel_open: AtomicBool::new(false),
+                edge_hidden: AtomicI64::new(0),
                 last_drag_move_ms: AtomicI64::new(0),
                 time_offset_ms: AtomicI64::new(0),
                 config_path,
@@ -954,8 +1111,10 @@ pub fn run() {
             get_state,
             save_settings,
             set_autostart,
+            set_window_level,
             set_pet_scale,
             set_panel_open,
+            reveal_from_edge,
             set_sleeping,
             start_drag,
             end_drag,
@@ -977,15 +1136,13 @@ mod tests {
     fn settings_are_safely_clamped_and_trimmed() {
         let value = Settings {
             scale: 9.0,
-            opacity: 0.1,
-            panel_opacity: 0.1,
+            panel_opacity: 0.01,
             city: "  上海  ".into(),
             ..Settings::default()
         };
         let value = sanitize_settings(value);
         assert_eq!(value.scale, 1.25);
-        assert_eq!(value.opacity, 0.45);
-        assert_eq!(value.panel_opacity, 0.55);
+        assert_eq!(value.panel_opacity, 0.10);
         assert_eq!(value.city, "上海");
     }
 
