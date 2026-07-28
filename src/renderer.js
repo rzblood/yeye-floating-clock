@@ -1,4 +1,4 @@
-const previewSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: true, liquidGlassInitialized: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+const previewSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: false, liquidGlassInitialized: true, liquidGlassDefaultOffV020Migrated: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 const previewTauri = {
   core: {
     invoke: async (command, args = {}) => {
@@ -21,7 +21,7 @@ const pet = $("#pet");
 const panel = $("#settings");
 const alarmOverlay = $("#alarm-overlay");
 
-let appSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: true, liquidGlassInitialized: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+let appSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: false, liquidGlassInitialized: true, liquidGlassDefaultOffV020Migrated: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 let networkOffsetMs = 0;
 let weatherReport = null;
 let activeAlarmLabel = "";
@@ -343,7 +343,17 @@ async function init() {
   await listen("facing", (event) => pet.classList.toggle("facing-left", event.payload === "left"));
   await listen("motion-state", (event) => pet.classList.toggle("walk", Boolean(event.payload)));
   await listen("sleep-state", (event) => { appSettings.sleeping = Boolean(event.payload); applySettings(); });
-  await listen("snap-state", () => { $("#snap-toast").classList.remove("hidden"); setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200); });
+  await listen("snap-state", (event) => {
+    $("#snap-toast").textContent = event.payload === "wall" ? "抱住窗口边缘" : "已稳稳站好";
+    $("#snap-toast").classList.remove("hidden");
+    setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200);
+  });
+  await listen("wall-state", (event) => {
+    const side = String(event.payload);
+    pet.classList.toggle("wall-clinging", side !== "none");
+    if (side === "none") delete pet.dataset.wallSide;
+    else pet.dataset.wallSide = side;
+  });
   await listen("edge-hidden", (event) => {
     edgeHidden = true;
     pet.dataset.edgeSide = String(event.payload);

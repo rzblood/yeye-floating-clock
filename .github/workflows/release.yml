@@ -27,6 +27,16 @@ jobs:
       - run: npm run frontend:build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npx tauri build --no-bundle
+      - name: Verify Windows GUI subsystem
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/yeye-floating-clock.exe"
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $peOffset + 24 + 68)
+          if ($subsystem -ne 2) {
+            throw "Expected Windows GUI subsystem (2), got $subsystem"
+          }
       - name: Prepare portable executable
         shell: pwsh
         run: |
@@ -83,4 +93,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "Yeye Floating Clock ${{ github.ref_name }}"
+        run: |
+          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" artifacts/* --clobber
+            gh release edit "${{ github.ref_name }}" --title "Yeye Floating Clock ${{ github.ref_name }}"
+          else
+            gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "Yeye Floating Clock ${{ github.ref_name }}"
+          fi

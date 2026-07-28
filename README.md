@@ -9,13 +9,13 @@ A lightweight transparent desktop companion built with Tauri 2 and Rust. The cur
 - Control panel opacity adjustable down to 10%
 - Click-to-jump, dragging, free roaming, idle waving, resting, and mirroring
 - Switchable always-on-top and desktop-layer modes; desktop mode temporarily comes forward while focused and returns after losing focus
-- Edge-peek mode: the pet hides at a screen edge, reveals more on hover, and returns fully when clicked
+- Edge-peek mode: Yeye hides at a screen edge, reveals more on hover, and returns fully when clicked
 - A single reusable layered arm model with independent shoulder movement and no duplicate static arm
 - Direct spring-in startup and quick tuck-away exit animations, without sun or moon transitions
 - Daily alarm, five-minute snooze, and system tray controls
 - Open-Meteo weather with no API key, refreshed every 30 minutes, plus optional liquid-glass cards and illustrated Meteocons icons
 - Periodic display-time calibration using network response timestamps without changing the system clock
-- Visible-window edge detection on Windows and macOS, allowing the pet to jump onto, stand on, and move along window tops
+- Visible-window edge detection on Windows and macOS, allowing Yeye to stand on window tops or cling to and crawl along either side
 - Single-instance behavior and optional launch at login
 
 ## Download and Run
@@ -37,7 +37,7 @@ On macOS, unzip the archive and move the app wherever you prefer. The open-sourc
 
 ## Window Climbing
 
-The app reads only the position and dimensions of visible windows; it does not read their titles or contents. Drag Yeye so her feet are close to the top of a normal window and release her to snap onto the edge. During free roaming, she may also jump onto a window and treat its top edge as a platform.
+The app reads only the position and dimensions of visible windows; it does not read their titles or contents. Drag Yeye so her feet are close to the top of a normal window and release her to stand on it. Drag her body close to a window's left or right edge to cling vertically; free roaming lets her crawl along the side. Click or drag her again to detach. During free roaming, she may also jump onto a window and treat its top edge as a platform.
 
 ## Local Development
 
@@ -86,6 +86,14 @@ cargo build --release --manifest-path src-tauri/Cargo.toml
 The `npm run build` wrapper calls `tauri build --no-bundle`; Tauri then invokes Cargo and includes the prepared frontend in the native application.
 
 Pushing a `v*` tag starts GitHub Actions. It creates only a portable Windows x64 `.exe` and an Apple Silicon `.app.zip`, then publishes a GitHub Release. It does not create installers or an Intel Mac build.
+
+You may also publish locally built files without waiting for GitHub Actions. Build on the target operating system, prepare the final portable file, and upload it with GitHub CLI:
+
+```bash
+gh release upload v0.2.0 /absolute/path/to/Yeye-Floating-Clock-v0.2.0-<platform-file> --clobber
+```
+
+Build the Apple Silicon `.app` on an Apple Silicon Mac. Build the Windows x64 `.exe` on Windows for the most reliable WebView2 and platform-toolchain result; cross-compiling the Windows Tauri application from macOS is not part of the supported release path.
 
 See [Maintenance and Roadmap](docs/MAINTENANCE.md) for the development history, known limitations, release checklist, and planned improvements.
 

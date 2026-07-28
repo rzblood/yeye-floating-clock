@@ -1,7 +1,7 @@
 [package]
 name = "yeye-floating-clock"
 version = "0.2.0"
-description = "Small cross-platform desktop clock, weather card and interactive pet"
+description = "Small cross-platform floating clock, weather card and interactive companion"
 authors = ["rzblood"]
 edition = "2021"
 license = "MIT"
