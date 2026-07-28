@@ -1,7 +1,23 @@
 use chrono::{Datelike, Local, Timelike};
+#[cfg(target_os = "macos")]
+use core_foundation::{
+    base::TCFType,
+    dictionary::{CFDictionaryGetValue, CFDictionaryRef},
+    number::{CFNumber, CFNumberRef},
+};
+#[cfg(target_os = "macos")]
+use core_graphics::{
+    geometry::{CGPoint, CGRect, CGSize},
+    window::{
+        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+        kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowOwnerPID,
+    },
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(target_os = "macos")]
+use std::ffi::c_void;
 use std::{
     fs,
     path::PathBuf,
@@ -30,7 +46,14 @@ const PANEL_WIDTH: f64 = 390.0;
 const PANEL_HEIGHT: f64 = 520.0;
 const GRAVITY: f64 = 760.0;
 const SNAP_DISTANCE: f64 = 14.0;
-const EDGE_REVEAL_WIDTH: f64 = 46.0;
+const EDGE_PEEK_WIDTH: f64 = 58.0;
+const EDGE_HOVER_WIDTH: f64 = 176.0;
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGRectMakeWithDictionaryRepresentation(dict: CFDictionaryRef, rect: *mut CGRect) -> bool;
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +73,9 @@ struct Settings {
     panel_opacity: f64,
     desktop_level: bool,
     edge_hide_enabled: bool,
+    free_roam_enabled: bool,
+    liquid_glass: bool,
+    liquid_glass_initialized: bool,
     mirrored: bool,
     snap_enabled: bool,
     weather_enabled: bool,
@@ -65,6 +91,9 @@ impl Default for Settings {
             panel_opacity: 0.94,
             desktop_level: false,
             edge_hide_enabled: false,
+            free_roam_enabled: true,
+            liquid_glass: true,
+            liquid_glass_initialized: true,
             mirrored: false,
             snap_enabled: true,
             weather_enabled: true,
@@ -144,6 +173,10 @@ struct WeatherReport {
 }
 
 fn sanitize_settings(mut settings: Settings) -> Settings {
+    if !settings.liquid_glass_initialized {
+        settings.liquid_glass = true;
+        settings.liquid_glass_initialized = true;
+    }
     settings.scale = settings.scale.clamp(0.50, 1.25);
     settings.panel_opacity = settings.panel_opacity.clamp(0.10, 1.0);
     settings.city = settings.city.trim().chars().take(40).collect();
@@ -224,6 +257,23 @@ fn apply_window_level(window: &WebviewWindow, desktop_level: bool) -> Result<(),
     }
 }
 
+fn apply_focus_aware_window_level(
+    window: &WebviewWindow,
+    desktop_level: bool,
+    focused: bool,
+) -> Result<(), String> {
+    if desktop_level && focused {
+        window
+            .set_always_on_bottom(false)
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())
+    } else {
+        apply_window_level(window, desktop_level)
+    }
+}
+
 #[tauri::command]
 fn set_window_level(
     window: WebviewWindow,
@@ -235,9 +285,49 @@ fn set_window_level(
         .map_err(|_| "设置状态不可用".to_string())?
         .desktop_level = desktop;
     if !data.panel_open.load(Ordering::Relaxed) {
-        apply_window_level(&window, desktop)?;
+        let focused = window.is_focused().unwrap_or(false);
+        apply_focus_aware_window_level(&window, desktop, focused)?;
     }
     persist_settings(&data)
+}
+
+fn edge_position(window: &WebviewWindow, side: i64, visible_width: f64) -> Result<i32, String> {
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "找不到显示器".to_string())?;
+    let area = monitor.work_area();
+    let visible = (visible_width * monitor.scale_factor()).round() as i32;
+    Ok(if side < 0 {
+        area.position.x - size.width as i32 + visible
+    } else {
+        area.position.x + area.size.width as i32 - visible
+    })
+}
+
+#[tauri::command]
+fn set_edge_peek(
+    window: WebviewWindow,
+    expanded: bool,
+    data: State<AppData>,
+) -> Result<bool, String> {
+    let side = data.edge_hidden.load(Ordering::Relaxed);
+    if side == 0 {
+        return Ok(false);
+    }
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let visible = if expanded {
+        EDGE_HOVER_WIDTH
+    } else {
+        EDGE_PEEK_WIDTH
+    };
+    let x = edge_position(&window, side, visible)?;
+    window
+        .set_position(PhysicalPosition::new(x, position.y))
+        .map_err(|error| error.to_string())?;
+    let _ = window.emit("edge-peek", expanded);
+    Ok(true)
 }
 
 #[tauri::command]
@@ -366,7 +456,8 @@ fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Re
             .lock()
             .map(|settings| settings.desktop_level)
             .unwrap_or(false);
-        apply_window_level(&window, desktop_level)?;
+        let focused = window.is_focused().unwrap_or(false);
+        apply_focus_aware_window_level(&window, desktop_level, focused)?;
     }
     Ok(())
 }
@@ -494,7 +585,8 @@ fn ready(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
         .lock()
         .map(|settings| settings.desktop_level)
         .unwrap_or(false);
-    apply_window_level(&window, desktop_level)?;
+    let focused = window.is_focused().unwrap_or(false);
+    apply_focus_aware_window_level(&window, desktop_level, focused)?;
     if let Ok(mut motion) = data.motion.lock() {
         motion.dragging = false;
     }
@@ -724,7 +816,7 @@ fn hide_near_screen_edge(window: &WebviewWindow, data: &AppData) -> Result<bool,
     let left_distance = (position.x - area.position.x).abs();
     let area_right = area.position.x + area.size.width as i32;
     let right_distance = (area_right - position.x - size.width as i32).abs();
-    let reveal = (EDGE_REVEAL_WIDTH * monitor.scale_factor()).round() as i32;
+    let reveal = (EDGE_PEEK_WIDTH * monitor.scale_factor()).round() as i32;
     let (side, x) = if left_distance <= 32 {
         (-1, area.position.x - size.width as i32 + reveal)
     } else if right_distance <= 32 {
@@ -741,7 +833,11 @@ fn hide_near_screen_edge(window: &WebviewWindow, data: &AppData) -> Result<bool,
 }
 
 #[cfg(target_os = "windows")]
-fn spawn_obstacle_watcher(obstacles: Arc<Mutex<Vec<Obstacle>>>, quitting: Arc<AtomicBool>) {
+fn spawn_obstacle_watcher(
+    _app: AppHandle,
+    obstacles: Arc<Mutex<Vec<Obstacle>>>,
+    quitting: Arc<AtomicBool>,
+) {
     use std::os::windows::process::CommandExt;
 
     thread::spawn(move || {
@@ -805,8 +901,74 @@ fn spawn_obstacle_watcher(obstacles: Arc<Mutex<Vec<Obstacle>>>, quitting: Arc<At
     });
 }
 
-#[cfg(not(target_os = "windows"))]
-fn spawn_obstacle_watcher(_obstacles: Arc<Mutex<Vec<Obstacle>>>, _quitting: Arc<AtomicBool>) {}
+#[cfg(target_os = "macos")]
+fn spawn_obstacle_watcher(
+    app: AppHandle,
+    obstacles: Arc<Mutex<Vec<Obstacle>>>,
+    quitting: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        while !quitting.load(Ordering::Relaxed) {
+            let scale = app
+                .get_webview_window("main")
+                .and_then(|window| window.scale_factor().ok())
+                .unwrap_or(1.0);
+            let mut parsed = Vec::new();
+            let options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
+            if let Some(windows) = copy_window_info(options, kCGNullWindowID) {
+                for raw in windows.get_all_values() {
+                    let dictionary = raw as CFDictionaryRef;
+                    let number = |key: *const c_void| -> Option<i64> {
+                        let value = unsafe { CFDictionaryGetValue(dictionary, key) };
+                        if value.is_null() {
+                            return None;
+                        }
+                        unsafe { CFNumber::wrap_under_get_rule(value as CFNumberRef) }.to_i64()
+                    };
+                    let owner_pid = number(unsafe { kCGWindowOwnerPID } as *const c_void);
+                    let layer = number(unsafe { kCGWindowLayer } as *const c_void);
+                    if owner_pid == Some(std::process::id() as i64) || layer != Some(0) {
+                        continue;
+                    }
+                    let bounds_value = unsafe {
+                        CFDictionaryGetValue(dictionary, kCGWindowBounds as *const c_void)
+                    };
+                    if bounds_value.is_null() {
+                        continue;
+                    }
+                    let mut bounds = CGRect::new(&CGPoint::new(0.0, 0.0), &CGSize::new(0.0, 0.0));
+                    let valid = unsafe {
+                        CGRectMakeWithDictionaryRepresentation(
+                            bounds_value as CFDictionaryRef,
+                            &mut bounds,
+                        )
+                    };
+                    if !valid || bounds.size.width < 80.0 || bounds.size.height < 50.0 {
+                        continue;
+                    }
+                    parsed.push(Obstacle {
+                        x: bounds.origin.x * scale,
+                        y: bounds.origin.y * scale,
+                        width: bounds.size.width * scale,
+                        height: bounds.size.height * scale,
+                    });
+                }
+            }
+            if let Ok(mut target) = obstacles.lock() {
+                *target = parsed;
+            }
+            thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn spawn_obstacle_watcher(
+    _app: AppHandle,
+    _obstacles: Arc<Mutex<Vec<Obstacle>>>,
+    _quitting: Arc<AtomicBool>,
+) {
+}
 
 fn spawn_motion_loop(app: AppHandle) {
     thread::spawn(move || {
@@ -868,7 +1030,7 @@ fn spawn_motion_loop(app: AppHandle) {
                 continue;
             }
 
-            if settings.sleeping {
+            if settings.sleeping || !settings.free_roam_enabled {
                 motion.vx *= (0.88_f64).powf(dt * 31.0);
             } else if now >= motion.next_decision {
                 let mut rng = rand::rng();
@@ -895,6 +1057,7 @@ fn spawn_motion_loop(app: AppHandle) {
             let area = monitor.work_area();
             let mut next_x = position.x as f64 + motion.vx * dt;
             let mut next_y = position.y as f64 + motion.vy * dt;
+            let was_grounded = motion.grounded;
             motion.grounded = false;
 
             let current_bottom = position.y as f64 + size.height as f64;
@@ -903,6 +1066,7 @@ fn spawn_motion_loop(app: AppHandle) {
             let right = next_x + size.width as f64;
             let mut landing_y =
                 area.position.y as f64 + area.size.height as f64 - size.height as f64;
+            let mut climbing = false;
 
             if settings.snap_enabled && motion.vy >= 0.0 {
                 if let Ok(obstacles) = data.obstacles.lock() {
@@ -912,6 +1076,24 @@ fn spawn_motion_loop(app: AppHandle) {
                         }
                         let overlap = right.min(obstacle.x + obstacle.width) - left.max(obstacle.x);
                         if overlap < size.width.min(100) as f64 * 0.28 {
+                            let obstacle_right = obstacle.x + obstacle.width;
+                            let current_left = position.x as f64;
+                            let current_right = current_left + size.width as f64;
+                            let approaching_right = motion.vx > 5.0
+                                && current_right <= obstacle.x + SNAP_DISTANCE
+                                && right >= obstacle.x - SNAP_DISTANCE;
+                            let approaching_left = motion.vx < -5.0
+                                && current_left >= obstacle_right - SNAP_DISTANCE
+                                && left <= obstacle_right + SNAP_DISTANCE;
+                            let obstacle_above =
+                                obstacle.y + 20.0 < current_bottom && obstacle.height >= 80.0;
+                            if was_grounded
+                                && settings.free_roam_enabled
+                                && obstacle_above
+                                && (approaching_right || approaching_left)
+                            {
+                                climbing = true;
+                            }
                             continue;
                         }
                         let near_top = current_bottom <= obstacle.y + SNAP_DISTANCE
@@ -921,6 +1103,12 @@ fn spawn_motion_loop(app: AppHandle) {
                         }
                     }
                 }
+            }
+
+            if climbing {
+                motion.vy = -460.0;
+                next_y = position.y as f64 + motion.vy * dt;
+                let _ = window.emit("climb-state", true);
             }
 
             if next_y >= landing_y {
@@ -933,7 +1121,7 @@ fn spawn_motion_loop(app: AppHandle) {
             let max_x = area.position.x as f64 + area.size.width as f64 - size.width as f64;
             if next_x <= min_x {
                 if settings.edge_hide_enabled && motion.grounded {
-                    let reveal = EDGE_REVEAL_WIDTH * monitor.scale_factor();
+                    let reveal = EDGE_PEEK_WIDTH * monitor.scale_factor();
                     next_x = min_x - size.width as f64 + reveal;
                     motion.vx = 0.0;
                     data.edge_hidden.store(-1, Ordering::Relaxed);
@@ -944,7 +1132,7 @@ fn spawn_motion_loop(app: AppHandle) {
                 }
             } else if next_x >= max_x {
                 if settings.edge_hide_enabled && motion.grounded {
-                    let reveal = EDGE_REVEAL_WIDTH * monitor.scale_factor();
+                    let reveal = EDGE_PEEK_WIDTH * monitor.scale_factor();
                     next_x = area.position.x as f64 + area.size.width as f64 - reveal;
                     motion.vx = 0.0;
                     data.edge_hidden.store(1, Ordering::Relaxed);
@@ -1035,7 +1223,8 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                 if let Some(window) = tray.app_handle().get_webview_window("main") {
                     let _ = window.show();
                     let data = tray.app_handle().state::<AppData>();
-                    let _ = reveal_from_edge(window, data);
+                    let _ = reveal_from_edge(window.clone(), data);
+                    let _ = window.set_focus();
                 }
             }
         });
@@ -1081,7 +1270,7 @@ pub fn run() {
                 time_offset_ms: AtomicI64::new(0),
                 config_path,
             });
-            spawn_obstacle_watcher(obstacles, quitting);
+            spawn_obstacle_watcher(app.handle().clone(), obstacles, quitting);
             spawn_motion_loop(app.handle().clone());
             build_tray(app)?;
             Ok(())
@@ -1096,6 +1285,19 @@ pub fn run() {
                     .unwrap_or(false)
                 {
                     data.last_drag_move_ms.store(epoch_ms(), Ordering::Relaxed);
+                }
+            }
+            if let tauri::WindowEvent::Focused(focused) = event {
+                let data = window.state::<AppData>();
+                let desktop_level = data
+                    .settings
+                    .lock()
+                    .map(|settings| settings.desktop_level)
+                    .unwrap_or(false);
+                if desktop_level && !data.panel_open.load(Ordering::Relaxed) {
+                    if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                        let _ = apply_focus_aware_window_level(&webview, true, *focused);
+                    }
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -1114,6 +1316,7 @@ pub fn run() {
             set_window_level,
             set_pet_scale,
             set_panel_open,
+            set_edge_peek,
             reveal_from_edge,
             set_sleeping,
             start_drag,

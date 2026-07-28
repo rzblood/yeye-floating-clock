@@ -1,4 +1,4 @@
-const previewSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+const previewSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: true, liquidGlassInitialized: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 const previewTauri = {
   core: {
     invoke: async (command, args = {}) => {
@@ -21,7 +21,7 @@ const pet = $("#pet");
 const panel = $("#settings");
 const alarmOverlay = $("#alarm-overlay");
 
-let appSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+let appSettings = { alarms: [], sleeping: false, scale: .82, panelOpacity: .94, desktopLevel: false, edgeHideEnabled: false, freeRoamEnabled: true, liquidGlass: true, liquidGlassInitialized: true, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 let networkOffsetMs = 0;
 let weatherReport = null;
 let activeAlarmLabel = "";
@@ -30,6 +30,80 @@ let speechTimer;
 let saveTimer;
 let audioContext;
 let edgeHidden = false;
+let idleTimer;
+let armGestureTimer;
+
+function installLiquidRefraction() {
+  const supportsUrlFilter = CSS.supports("backdrop-filter", 'url("#liquid-specular")')
+    || CSS.supports("-webkit-backdrop-filter", 'url("#liquid-specular")');
+  const smoothStep = (edge0, edge1, value) => {
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  };
+  const displacementTexture = (width, height, radius) => {
+    const sampleWidth = Math.max(32, Math.min(220, Math.round(width)));
+    const sampleHeight = Math.max(24, Math.round(sampleWidth * height / width));
+    const canvas = document.createElement("canvas");
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+    const context = canvas.getContext("2d");
+    const pixels = context.createImageData(sampleWidth, sampleHeight);
+    const minSide = Math.min(sampleWidth, sampleHeight);
+    const halfWidth = sampleWidth / minSide / 2 - .035;
+    const halfHeight = sampleHeight / minSide / 2 - .035;
+    const corner = Math.min(radius / Math.min(width, height), Math.min(halfWidth, halfHeight) * .92);
+    for (let y = 0; y < sampleHeight; y += 1) {
+      for (let x = 0; x < sampleWidth; x += 1) {
+        const u = (x + .5) / sampleWidth;
+        const v = (y + .5) / sampleHeight;
+        const px = (u - .5) * sampleWidth / minSide;
+        const py = (v - .5) * sampleHeight / minSide;
+        const qx = Math.abs(px) - halfWidth + corner;
+        const qy = Math.abs(py) - halfHeight + corner;
+        const distance = Math.hypot(Math.max(qx, 0), Math.max(qy, 0))
+          + Math.min(Math.max(qx, qy), 0) - corner;
+        const edgeRefraction = smoothStep(.15, -.055, distance);
+        const scale = smoothStep(0, 1, edgeRefraction);
+        const offset = (y * sampleWidth + x) * 4;
+        pixels.data[offset] = Math.round((px * scale * minSide / sampleWidth + .5) * 255);
+        pixels.data[offset + 1] = Math.round((py * scale * minSide / sampleHeight + .5) * 255);
+        pixels.data[offset + 2] = 128;
+        pixels.data[offset + 3] = 255;
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/png");
+  };
+  const refresh = (element) => {
+    const { width, height } = element.getBoundingClientRect();
+    if (!width || !height) return;
+    const radius = parseFloat(getComputedStyle(element).borderRadius) || 18;
+    const map = displacementTexture(width, height, radius);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(width)}" height="${Math.ceil(height)}"><filter id="g" color-interpolation-filters="sRGB"><feImage href="${map}" width="100%" height="100%" preserveAspectRatio="none" result="map"/><feDisplacementMap in="SourceGraphic" in2="map" scale="46" xChannelSelector="R" yChannelSelector="G"/></filter></svg>`;
+    const filter = `url("data:image/svg+xml,${encodeURIComponent(svg)}#g")`;
+    element.style.setProperty("--liquid-edge-filter", filter);
+    if (supportsUrlFilter) {
+      const value = `${filter} blur(8px) saturate(1.7) contrast(1.12)`;
+      element.style.backdropFilter = value;
+      element.style.webkitBackdropFilter = value;
+      element.classList.add("liquid-refraction");
+    }
+  };
+  document.querySelectorAll(".glass, .panel").forEach((element) => {
+    refresh(element);
+    new ResizeObserver(() => refresh(element)).observe(element);
+  });
+}
+
+function playArmGesture(className, duration) {
+  clearTimeout(armGestureTimer);
+  pet.classList.remove("idle-wave-left", "idle-wave-right");
+  void pet.offsetWidth;
+  pet.classList.add(className);
+  armGestureTimer = setTimeout(() => {
+    pet.classList.remove(className);
+  }, duration);
+}
 
 const now = () => new Date(Date.now() + networkOffsetMs);
 function updateClock() {
@@ -38,20 +112,20 @@ function updateClock() {
   $("#date").textContent = value.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
 }
 function weatherVisual(code) {
-  if (code === 0) return ["☀", "晴朗", "clear"];
-  if ([1, 2, 3].includes(code)) return ["☁", "多云", "cloud"];
-  if ([45, 48].includes(code)) return ["≋", "有雾", "cloud"];
-  if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return ["☂", "有雨", "rain"];
-  if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return ["❄", "有雪", "snow"];
-  if (code >= 95) return ["ϟ", "雷雨", "rain"];
-  return ["◌", "天气", "clear"];
+  if (code === 0) return ["clear-day.svg", "晴朗", "clear"];
+  if ([1, 2, 3].includes(code)) return ["partly-cloudy-day.svg", "多云", "cloud"];
+  if ([45, 48].includes(code)) return ["fog.svg", "有雾", "cloud"];
+  if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return ["rain.svg", "有雨", "rain"];
+  if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return ["snow.svg", "有雪", "snow"];
+  if (code >= 95) return ["thunderstorms-day-rain.svg", "雷雨", "rain"];
+  return ["partly-cloudy-day.svg", "天气", "clear"];
 }
 function renderWeather() {
   $("#weather-chip").classList.toggle("hidden", !appSettings.weatherEnabled);
   if (!weatherReport) return;
   const [icon, text, kind] = weatherVisual(weatherReport.weatherCode);
   stage.dataset.weather = kind;
-  $("#weather-icon").textContent = icon;
+  $("#weather-icon").src = `assets/weather/${icon}`;
   $("#weather-temp").textContent = `${Math.round(weatherReport.temperature)}°`;
   $("#weather-detail").textContent = `${weatherReport.city} · ${text} ${weatherReport.temperature.toFixed(1)}℃，体感 ${weatherReport.apparentTemperature.toFixed(1)}℃ · 今日 ${Math.round(weatherReport.temperatureMin)}–${Math.round(weatherReport.temperatureMax)}℃ · 湿度 ${Math.round(weatherReport.humidity)}% · 风速 ${Math.round(weatherReport.windSpeed)} km/h`;
 }
@@ -87,10 +161,13 @@ function applySettings() {
   document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity);
   pet.classList.toggle("sleep", appSettings.sleeping);
   pet.classList.toggle("mirrored", appSettings.mirrored);
+  stage.classList.toggle("liquid-glass", appSettings.liquidGlass);
   $("#pause-motion").checked = appSettings.sleeping;
   $("#mirror-pet").checked = appSettings.mirrored;
   $("#snap-enabled").checked = appSettings.snapEnabled;
   $("#edge-hide-enabled").checked = appSettings.edgeHideEnabled;
+  $("#free-roam-enabled").checked = appSettings.freeRoamEnabled;
+  $("#liquid-glass").checked = appSettings.liquidGlass;
   $("#window-level").value = appSettings.desktopLevel ? "desktop" : "top";
   $("#weather-enabled").checked = appSettings.weatherEnabled;
   $("#pet-scale").value = Math.round(appSettings.scale * 100);
@@ -131,7 +208,7 @@ function beep() {
 }
 function startAlarm(alarm) {
   activeAlarmLabel = alarm?.label || "闹钟时间到"; $("#alarm-title").textContent = activeAlarmLabel;
-  panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); beep();
+  panel.classList.add("hidden"); stage.classList.remove("panel-open"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); beep();
   clearInterval(alarmTimer); alarmTimer = setInterval(beep, 1150);
 }
 function stopAlarm() { clearInterval(alarmTimer); alarmOverlay.classList.add("hidden"); pet.classList.remove("hidden"); say("好，已经关掉啦。"); }
@@ -143,10 +220,11 @@ const openSettings = async () => {
   alarmOverlay.classList.add("hidden");
   try { await invoke("set_panel_open", { open: true }); }
   catch (error) { $("#app-status").textContent = `控制台调整失败：${error}`; }
+  stage.classList.add("panel-open");
   panel.classList.remove("hidden");
 };
 
-$("#clock-card").onclick = openSettings; $("#close-settings").onclick = async () => { panel.classList.add("hidden"); await invoke("set_panel_open", { open: false }); };
+$("#clock-card").onclick = openSettings; $("#close-settings").onclick = async () => { panel.classList.add("hidden"); stage.classList.remove("panel-open"); await invoke("set_panel_open", { open: false }); };
 $("#weather-chip").onclick = () => refreshWeather(); $("#refresh-weather").onclick = () => refreshWeather(); $("#sync-now").onclick = () => syncTime();
 $("#quit").onclick = () => invoke("request_quit");
 $("#alarm-form").onsubmit = (event) => {
@@ -154,10 +232,30 @@ $("#alarm-form").onsubmit = (event) => {
   appSettings.alarms.push({ id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, time, label: $("#alarm-label").value.trim(), enabled: true });
   $("#alarm-label").value = ""; renderAlarms(); scheduleSave(); say(`闹钟已设为 ${time}`);
 };
-$("#pause-motion").onchange = async (event) => { appSettings.sleeping = event.target.checked; pet.classList.toggle("sleep", appSettings.sleeping); await invoke("set_sleeping", { value: appSettings.sleeping }); };
+$("#pause-motion").onchange = async (event) => {
+  appSettings.sleeping = event.target.checked;
+  if (appSettings.sleeping) {
+    appSettings.freeRoamEnabled = false;
+    $("#free-roam-enabled").checked = false;
+    scheduleSave();
+  }
+  pet.classList.toggle("sleep", appSettings.sleeping);
+  await invoke("set_sleeping", { value: appSettings.sleeping });
+};
 $("#mirror-pet").onchange = (event) => { appSettings.mirrored = event.target.checked; pet.classList.toggle("mirrored", appSettings.mirrored); scheduleSave(); };
 $("#snap-enabled").onchange = (event) => { appSettings.snapEnabled = event.target.checked; scheduleSave(); };
+$("#free-roam-enabled").onchange = async (event) => {
+  appSettings.freeRoamEnabled = event.target.checked;
+  if (appSettings.freeRoamEnabled && appSettings.sleeping) {
+    appSettings.sleeping = false;
+    $("#pause-motion").checked = false;
+    pet.classList.remove("sleep");
+    await invoke("set_sleeping", { value: false });
+  }
+  scheduleSave();
+};
 $("#weather-enabled").onchange = (event) => { appSettings.weatherEnabled = event.target.checked; renderWeather(); scheduleSave(); if (appSettings.weatherEnabled && !weatherReport) refreshWeather(true); };
+$("#liquid-glass").onchange = (event) => { appSettings.liquidGlass = event.target.checked; stage.classList.toggle("liquid-glass", appSettings.liquidGlass); scheduleSave(); };
 $("#autostart").onchange = async (event) => { try { await invoke("set_autostart", { enabled: event.target.checked }); } catch (error) { event.target.checked = !event.target.checked; say(`开机启动设置失败：${error}`); } };
 $("#pet-scale").oninput = async (event) => { const value = Number(event.target.value) / 100; appSettings.scale = value; $("#scale-value").textContent = `${event.target.value}%`; try { appSettings.scale = await invoke("set_pet_scale", { value }); } catch (error) { $("#app-status").textContent = `调整大小失败：${error}`; } };
 $("#panel-opacity").oninput = (event) => { appSettings.panelOpacity = Number(event.target.value) / 100; $("#panel-opacity-value").textContent = `${event.target.value}%`; document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity); scheduleSave(); };
@@ -166,14 +264,38 @@ $("#window-level").onchange = async (event) => {
   try { await invoke("set_window_level", { desktop: appSettings.desktopLevel }); }
   catch (error) { event.target.value = appSettings.desktopLevel ? "top" : "desktop"; appSettings.desktopLevel = !appSettings.desktopLevel; say(`窗口层级设置失败：${error}`); }
 };
-$("#edge-hide-enabled").onchange = (event) => { appSettings.edgeHideEnabled = event.target.checked; if (!appSettings.edgeHideEnabled) { edgeHidden = false; invoke("reveal_from_edge"); } scheduleSave(); };
+$("#edge-hide-enabled").onchange = (event) => {
+  appSettings.edgeHideEnabled = event.target.checked;
+  if (!appSettings.edgeHideEnabled) {
+    edgeHidden = false;
+    pet.classList.remove("edge-peeking", "edge-peek-expanded");
+    delete pet.dataset.edgeSide;
+    invoke("reveal_from_edge");
+  }
+  scheduleSave();
+};
+
+function scheduleIdleWave() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (!appSettings.sleeping && !edgeHidden && panel.classList.contains("hidden") && !pet.classList.contains("jump-cheer")) {
+      const className = Math.random() < .5 ? "idle-wave-left" : "idle-wave-right";
+      playArmGesture(className, 1250);
+    }
+    scheduleIdleWave();
+  }, 7000 + Math.random() * 9000);
+}
 
 let petGesture = null;
 function triggerJump() {
+  clearTimeout(armGestureTimer);
+  pet.classList.remove("idle-wave-left", "idle-wave-right");
   pet.classList.remove("jump-cheer");
   void pet.offsetWidth;
   pet.classList.add("jump-cheer");
-  setTimeout(() => pet.classList.remove("jump-cheer"), 760);
+  armGestureTimer = setTimeout(() => {
+    pet.classList.remove("jump-cheer");
+  }, 760);
   invoke("jump"); say("跳！");
 }
 pet.onpointerdown = (event) => {
@@ -181,6 +303,8 @@ pet.onpointerdown = (event) => {
   event.preventDefault();
   if (edgeHidden) {
     edgeHidden = false;
+    pet.classList.remove("edge-peeking", "edge-peek-expanded");
+    delete pet.dataset.edgeSide;
     invoke("reveal_from_edge");
     return;
   }
@@ -204,6 +328,8 @@ pet.onpointerup = (event) => {
   if (wasDragging) invoke("end_drag"); else triggerJump();
 };
 pet.onpointercancel = () => { petGesture = null; pet.classList.remove("dragging"); };
+stage.onpointerenter = () => { if (edgeHidden) invoke("set_edge_peek", { expanded: true }); };
+stage.onpointerleave = () => { if (edgeHidden) invoke("set_edge_peek", { expanded: false }); };
 document.addEventListener("dragstart", (event) => event.preventDefault());
 document.addEventListener("selectstart", (event) => { if (!event.target.closest("input, textarea")) event.preventDefault(); });
 stage.oncontextmenu = (event) => { event.preventDefault(); openSettings(); };
@@ -211,18 +337,30 @@ $("#stop-alarm").onclick = stopAlarm;
 $("#snooze").onclick = () => { stopAlarm(); setTimeout(() => startAlarm({ label: activeAlarmLabel }), 5 * 60 * 1000); say("好，五分钟后再叫你。"); };
 
 async function init() {
+  installLiquidRefraction();
   await listen("alarm-triggered", (event) => startAlarm(event.payload));
   await listen("open-settings", openSettings);
   await listen("facing", (event) => pet.classList.toggle("facing-left", event.payload === "left"));
   await listen("motion-state", (event) => pet.classList.toggle("walk", Boolean(event.payload)));
   await listen("sleep-state", (event) => { appSettings.sleeping = Boolean(event.payload); applySettings(); });
   await listen("snap-state", () => { $("#snap-toast").classList.remove("hidden"); setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200); });
-  await listen("edge-hidden", () => { edgeHidden = true; });
-  await listen("play-exit", () => { panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("goodbye"); });
+  await listen("edge-hidden", (event) => {
+    edgeHidden = true;
+    pet.dataset.edgeSide = String(event.payload);
+    pet.classList.add("edge-peeking");
+  });
+  await listen("edge-peek", (event) => pet.classList.toggle("edge-peek-expanded", Boolean(event.payload)));
+  await listen("climb-state", () => { pet.classList.add("climb-cheer"); setTimeout(() => pet.classList.remove("climb-cheer"), 650); });
+  await listen("play-exit", () => { panel.classList.add("hidden"); stage.classList.remove("panel-open"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("goodbye"); });
   const snapshot = await invoke("get_state"); appSettings = { ...appSettings, ...snapshot.settings }; $("#autostart").checked = snapshot.autostart;
+  if (appSettings.freeRoamEnabled && appSettings.sleeping) {
+    appSettings.sleeping = false;
+    await invoke("set_sleeping", { value: false });
+  }
   applySettings(); renderAlarms();
   const next = new Date(Date.now() + 3600000); $("#alarm-time").value = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
   updateClock(); setInterval(updateClock, 1000); await invoke("ready"); intro();
+  scheduleIdleWave();
   if (appSettings.weatherEnabled) refreshWeather(true); else syncTime(true);
   setInterval(() => appSettings.weatherEnabled ? refreshWeather(true) : syncTime(true), 30 * 60 * 1000);
 }

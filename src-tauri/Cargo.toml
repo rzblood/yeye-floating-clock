@@ -1,6 +1,6 @@
 [package]
 name = "yeye-desktop-pet-clock"
-version = "0.0.2"
+version = "0.2.0"
 description = "Small cross-platform desktop clock, weather card and interactive pet"
 authors = ["rzblood"]
 edition = "2021"
@@ -23,6 +23,10 @@ tauri = { version = "2.11.5", features = ["tray-icon", "image-png", "macos-priva
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-single-instance = "2.4.3"
 ureq = { version = "3.3.0", features = ["json"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.25"
 
 [profile.release]
 codegen-units = 1

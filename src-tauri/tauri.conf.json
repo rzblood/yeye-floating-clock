@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "椰椰桌面时钟",
-  "version": "0.0.2",
+  "version": "0.2.0",
   "identifier": "com.rzblood.yeye.desktopclock",
   "build": {
     "beforeBuildCommand": "npm run frontend:build",
