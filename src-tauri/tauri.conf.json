@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "椰椰桌面时钟",
-  "version": "2.0.0",
+  "version": "0.0.2",
   "identifier": "com.rzblood.yeye.desktopclock",
   "build": {
     "beforeBuildCommand": "npm run frontend:build",
@@ -17,8 +17,8 @@
         "title": "椰椰桌面时钟",
         "width": 282,
         "height": 344,
-        "minWidth": 230,
-        "minHeight": 280,
+        "minWidth": 172,
+        "minHeight": 209,
         "resizable": false,
         "decorations": false,
         "transparent": true,

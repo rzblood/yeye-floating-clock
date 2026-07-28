@@ -1,6 +1,6 @@
 [package]
 name = "yeye-desktop-pet-clock"
-version = "2.0.0"
+version = "0.0.2"
 description = "Small cross-platform desktop clock, weather card and interactive pet"
 authors = ["rzblood"]
 edition = "2021"

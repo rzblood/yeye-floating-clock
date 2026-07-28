@@ -27,3 +27,6 @@ for (const name of await readdir(source)) {
 for (const name of runtimeAssets) {
   await cp(join(assets, name), join(output, "assets", name));
 }
+
+await cp(join(assets, "puppet", "left-joint.png"), join(output, "assets", "shoulder-left.png"));
+await cp(join(assets, "puppet", "right-joint.png"), join(output, "assets", "shoulder-right.png"));

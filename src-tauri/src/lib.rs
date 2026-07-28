@@ -26,6 +26,8 @@ use tauri_plugin_autostart::ManagerExt;
 
 const BASE_WIDTH: f64 = 344.0;
 const BASE_HEIGHT: f64 = 418.0;
+const PANEL_WIDTH: f64 = 390.0;
+const PANEL_HEIGHT: f64 = 520.0;
 const GRAVITY: f64 = 760.0;
 const SNAP_DISTANCE: f64 = 34.0;
 
@@ -45,6 +47,7 @@ struct Settings {
     sleeping: bool,
     scale: f64,
     opacity: f64,
+    panel_opacity: f64,
     mirrored: bool,
     snap_enabled: bool,
     weather_enabled: bool,
@@ -58,6 +61,7 @@ impl Default for Settings {
             sleeping: false,
             scale: 0.82,
             opacity: 1.0,
+            panel_opacity: 0.94,
             mirrored: false,
             snap_enabled: true,
             weather_enabled: true,
@@ -104,6 +108,7 @@ struct AppData {
     motion: Mutex<Motion>,
     obstacles: Arc<Mutex<Vec<Obstacle>>>,
     quitting: Arc<AtomicBool>,
+    panel_open: AtomicBool,
     time_offset_ms: AtomicI64,
     config_path: PathBuf,
 }
@@ -134,8 +139,9 @@ struct WeatherReport {
 }
 
 fn sanitize_settings(mut settings: Settings) -> Settings {
-    settings.scale = settings.scale.clamp(0.65, 1.25);
+    settings.scale = settings.scale.clamp(0.50, 1.25);
     settings.opacity = settings.opacity.clamp(0.45, 1.0);
+    settings.panel_opacity = settings.panel_opacity.clamp(0.55, 1.0);
     settings.city = settings.city.trim().chars().take(40).collect();
     settings.alarms.truncate(30);
     settings
@@ -196,11 +202,35 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Result<f64, String> {
-    let scale = value.clamp(0.65, 1.25);
+fn resize_anchored(window: &WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     let old_position = window.outer_position().ok();
     let old_size = window.outer_size().ok();
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|error| error.to_string())?;
+
+    if let (Some(position), Some(old_size), Ok(new_size)) =
+        (old_position, old_size, window.outer_size())
+    {
+        let mut x = position.x + old_size.width as i32 - new_size.width as i32;
+        let mut y = position.y + old_size.height as i32 - new_size.height as i32;
+        if let Ok(Some(monitor)) = window.current_monitor() {
+            let area = monitor.work_area();
+            let max_x = area.position.x + area.size.width as i32 - new_size.width as i32;
+            let max_y = area.position.y + area.size.height as i32 - new_size.height as i32;
+            x = x.clamp(area.position.x, max_x.max(area.position.x));
+            y = y.clamp(area.position.y, max_y.max(area.position.y));
+        }
+        window
+            .set_position(PhysicalPosition::new(x, y))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Result<f64, String> {
+    let scale = value.clamp(0.50, 1.25);
     {
         let mut settings = data
             .settings
@@ -208,17 +238,28 @@ fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Res
             .map_err(|_| "设置状态不可用".to_string())?;
         settings.scale = scale;
     }
-    window
-        .set_size(LogicalSize::new(BASE_WIDTH * scale, BASE_HEIGHT * scale))
-        .map_err(|error| error.to_string())?;
-    if let (Some(position), Some(old_size), Ok(new_size)) =
-        (old_position, old_size, window.outer_size())
-    {
-        let anchored_y = position.y + old_size.height as i32 - new_size.height as i32;
-        let _ = window.set_position(PhysicalPosition::new(position.x, anchored_y));
+    if !data.panel_open.load(Ordering::Relaxed) {
+        resize_anchored(&window, BASE_WIDTH * scale, BASE_HEIGHT * scale)?;
     }
     persist_settings(&data)?;
     Ok(scale)
+}
+
+#[tauri::command]
+fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Result<(), String> {
+    let (width, height) = if open {
+        (PANEL_WIDTH, PANEL_HEIGHT)
+    } else {
+        let scale = data
+            .settings
+            .lock()
+            .map(|settings| settings.scale)
+            .unwrap_or(0.82);
+        (BASE_WIDTH * scale, BASE_HEIGHT * scale)
+    };
+    resize_anchored(&window, width, height)?;
+    data.panel_open.store(open, Ordering::Relaxed);
+    Ok(())
 }
 
 #[tauri::command]
@@ -652,6 +693,30 @@ fn spawn_motion_loop(app: AppHandle) {
                 .lock()
                 .map(|value| value.clone())
                 .unwrap_or_default();
+            let local = Local::now()
+                + chrono::Duration::milliseconds(data.time_offset_ms.load(Ordering::Relaxed));
+            let minute = format!(
+                "{}-{}-{}-{}",
+                local.ordinal0(),
+                local.hour(),
+                local.minute(),
+                local.year()
+            );
+            if minute != last_alarm_minute {
+                last_alarm_minute = minute;
+                let hhmm = format!("{:02}:{:02}", local.hour(), local.minute());
+                if let Some(alarm) = settings
+                    .alarms
+                    .iter()
+                    .find(|alarm| alarm.enabled && alarm.time == hhmm)
+                {
+                    let _ = window.emit("alarm-triggered", alarm.clone());
+                }
+            }
+            if data.panel_open.load(Ordering::Relaxed) {
+                continue;
+            }
+
             let mut motion = match data.motion.lock() {
                 Ok(value) => value,
                 Err(_) => continue,
@@ -750,27 +815,6 @@ fn spawn_motion_loop(app: AppHandle) {
                 next_x.round() as i32,
                 next_y.round() as i32,
             ));
-
-            let local = Local::now()
-                + chrono::Duration::milliseconds(data.time_offset_ms.load(Ordering::Relaxed));
-            let minute = format!(
-                "{}-{}-{}-{}",
-                local.ordinal0(),
-                local.hour(),
-                local.minute(),
-                local.year()
-            );
-            if minute != last_alarm_minute {
-                last_alarm_minute = minute;
-                let hhmm = format!("{:02}:{:02}", local.hour(), local.minute());
-                if let Some(alarm) = settings
-                    .alarms
-                    .iter()
-                    .find(|alarm| alarm.enabled && alarm.time == hhmm)
-                {
-                    let _ = window.emit("alarm-triggered", alarm.clone());
-                }
-            }
         }
     });
 }
@@ -866,6 +910,7 @@ pub fn run() {
                 motion: Mutex::new(Motion::default()),
                 obstacles: obstacles.clone(),
                 quitting: quitting.clone(),
+                panel_open: AtomicBool::new(false),
                 time_offset_ms: AtomicI64::new(0),
                 config_path,
             });
@@ -879,6 +924,7 @@ pub fn run() {
                 let data = window.state::<AppData>();
                 if !data.quitting.load(Ordering::Relaxed) {
                     api.prevent_close();
+                    data.panel_open.store(false, Ordering::Relaxed);
                     let _ = window.hide();
                 }
             }
@@ -888,6 +934,7 @@ pub fn run() {
             save_settings,
             set_autostart,
             set_pet_scale,
+            set_panel_open,
             set_sleeping,
             start_drag,
             end_drag,
@@ -910,12 +957,14 @@ mod tests {
         let value = Settings {
             scale: 9.0,
             opacity: 0.1,
+            panel_opacity: 0.1,
             city: "  上海  ".into(),
             ..Settings::default()
         };
         let value = sanitize_settings(value);
         assert_eq!(value.scale, 1.25);
         assert_eq!(value.opacity, 0.45);
+        assert_eq!(value.panel_opacity, 0.55);
         assert_eq!(value.city, "上海");
     }
 

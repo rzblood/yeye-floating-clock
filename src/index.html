@@ -26,6 +26,8 @@
     </div>
 
     <section id="pet" class="pet" aria-label="紫色番薯桌面宠物">
+      <img class="shoulder-fill shoulder-left" src="assets/shoulder-left.png" alt="">
+      <img class="shoulder-fill shoulder-right" src="assets/shoulder-right.png" alt="">
       <img class="pet-body" src="assets/pet-puppet-body.png" alt="">
       <img class="pet-arm pet-arm-left" src="assets/pet-cute-left-arm.png" alt="">
       <img class="pet-arm pet-arm-right" src="assets/pet-cute-right-arm.png" alt="">
@@ -51,8 +53,9 @@
         </section>
         <section class="setting-section">
           <h2>外观与行为</h2>
-          <label class="range-row"><span>大小 <b id="scale-value">82%</b></span><input id="pet-scale" type="range" min="65" max="125" value="82"></label>
-          <label class="range-row"><span>透明度 <b id="opacity-value">100%</b></span><input id="pet-opacity" type="range" min="45" max="100" value="100"></label>
+          <label class="range-row"><span>桌宠大小 <b id="scale-value">82%</b></span><input id="pet-scale" type="range" min="50" max="125" value="82"></label>
+          <label class="range-row"><span>桌宠透明度 <b id="opacity-value">100%</b></span><input id="pet-opacity" type="range" min="45" max="100" value="100"></label>
+          <label class="range-row"><span>面板透明度 <b id="panel-opacity-value">94%</b></span><input id="panel-opacity" type="range" min="55" max="100" value="94"></label>
           <label class="switch-row"><span>窗口吸附</span><input id="snap-enabled" type="checkbox" checked></label>
           <label class="switch-row"><span>安静休息</span><input id="pause-motion" type="checkbox"></label>
           <label class="switch-row"><span>镜像显示</span><input id="mirror-pet" type="checkbox"></label>
@@ -67,7 +70,7 @@
           <small class="attribution">天气数据：Open‑Meteo · 每 30 分钟更新</small>
         </section>
       </div>
-      <footer class="panel-footer"><span id="app-status">Tauri 2 · 轻量模式</span><button id="quit" class="danger-button">退出椰椰</button></footer>
+      <footer class="panel-footer"><span id="app-status">预览版 0.0.2 · Tauri 2</span><button id="quit" class="danger-button">退出椰椰</button></footer>
     </section>
 
     <section id="alarm-overlay" class="panel alarm hidden" role="alert">

@@ -1,11 +1,11 @@
-const previewSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+const previewSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, panelOpacity: .94, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 const previewTauri = {
   core: {
     invoke: async (command, args = {}) => {
       if (command === "get_state") return { settings: previewSettings, autostart: false, platform: "preview" };
       if (command === "refresh_weather") return { city: args.city || "上海", country: "中国", temperature: 27.3, apparentTemperature: 29.1, humidity: 64, windSpeed: 9.8, weatherCode: 1, temperatureMax: 31, temperatureMin: 24, sunrise: "05:09", sunset: "18:52", networkOffsetMs: 0 };
       if (command === "sync_time") return 0;
-      if (command === "set_pet_scale") return Math.max(.65, Math.min(1.25, Number(args.value)));
+      if (command === "set_pet_scale") return Math.max(.50, Math.min(1.25, Number(args.value)));
       if (command === "save_settings") return args.value;
       return null;
     },
@@ -23,7 +23,7 @@ const alarmOverlay = $("#alarm-overlay");
 const celestial = $("#celestial");
 const celestialImage = $("#celestial-image");
 
-let appSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
+let appSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, panelOpacity: .94, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 let networkOffsetMs = 0;
 let weatherReport = null;
 let activeAlarmLabel = "";
@@ -86,6 +86,7 @@ function say(text, duration = 2400) {
 }
 function applySettings() {
   document.documentElement.style.setProperty("--pet-opacity", appSettings.opacity);
+  document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity);
   pet.classList.toggle("sleep", appSettings.sleeping);
   pet.classList.toggle("mirrored", appSettings.mirrored);
   $("#pause-motion").checked = appSettings.sleeping;
@@ -96,6 +97,8 @@ function applySettings() {
   $("#scale-value").textContent = `${Math.round(appSettings.scale * 100)}%`;
   $("#pet-opacity").value = Math.round(appSettings.opacity * 100);
   $("#opacity-value").textContent = `${Math.round(appSettings.opacity * 100)}%`;
+  $("#panel-opacity").value = Math.round(appSettings.panelOpacity * 100);
+  $("#panel-opacity-value").textContent = `${Math.round(appSettings.panelOpacity * 100)}%`;
   $("#weather-city").value = appSettings.city;
   renderWeather();
 }
@@ -134,7 +137,7 @@ function showCelestial(mode, exit = false) {
 }
 function startAlarm(alarm) {
   activeAlarmLabel = alarm?.label || "闹钟时间到"; $("#alarm-title").textContent = activeAlarmLabel;
-  panel.classList.add("hidden"); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); showCelestial("sun"); beep();
+  panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); showCelestial("sun"); beep();
   clearInterval(alarmTimer); alarmTimer = setInterval(beep, 1150);
 }
 function stopAlarm() { clearInterval(alarmTimer); alarmOverlay.classList.add("hidden"); celestial.classList.add("hidden"); pet.classList.remove("hidden"); say("好，已经关掉啦。"); }
@@ -144,9 +147,14 @@ function intro() {
   setTimeout(() => { celestial.classList.add("hidden"); pet.classList.remove("hidden"); pet.classList.add("intro"); }, 2480);
   setTimeout(() => { pet.classList.remove("intro"); say(daytime ? "今天也要闪闪发光！" : "今晚让我陪着你。"); }, 3300);
 }
-const openSettings = () => { alarmOverlay.classList.add("hidden"); panel.classList.remove("hidden"); };
+const openSettings = async () => {
+  alarmOverlay.classList.add("hidden");
+  try { await invoke("set_panel_open", { open: true }); }
+  catch (error) { $("#app-status").textContent = `控制台调整失败：${error}`; }
+  panel.classList.remove("hidden");
+};
 
-$("#clock-card").onclick = openSettings; $("#close-settings").onclick = () => panel.classList.add("hidden");
+$("#clock-card").onclick = openSettings; $("#close-settings").onclick = async () => { panel.classList.add("hidden"); await invoke("set_panel_open", { open: false }); };
 $("#weather-chip").onclick = () => refreshWeather(); $("#refresh-weather").onclick = () => refreshWeather(); $("#sync-now").onclick = () => syncTime();
 $("#quit").onclick = () => invoke("request_quit");
 $("#alarm-form").onsubmit = (event) => {
@@ -161,6 +169,7 @@ $("#weather-enabled").onchange = (event) => { appSettings.weatherEnabled = event
 $("#autostart").onchange = async (event) => { try { await invoke("set_autostart", { enabled: event.target.checked }); } catch (error) { event.target.checked = !event.target.checked; say(`开机启动设置失败：${error}`); } };
 $("#pet-scale").oninput = async (event) => { const value = Number(event.target.value) / 100; appSettings.scale = value; $("#scale-value").textContent = `${event.target.value}%`; try { appSettings.scale = await invoke("set_pet_scale", { value }); } catch (error) { $("#app-status").textContent = `调整大小失败：${error}`; } };
 $("#pet-opacity").oninput = (event) => { appSettings.opacity = Number(event.target.value) / 100; $("#opacity-value").textContent = `${event.target.value}%`; document.documentElement.style.setProperty("--pet-opacity", appSettings.opacity); scheduleSave(); };
+$("#panel-opacity").oninput = (event) => { appSettings.panelOpacity = Number(event.target.value) / 100; $("#panel-opacity-value").textContent = `${event.target.value}%`; document.documentElement.style.setProperty("--panel-opacity", appSettings.panelOpacity); scheduleSave(); };
 pet.onpointerdown = async () => {
   pet.classList.add("dragging");
   try { await invoke("start_drag"); }
@@ -179,7 +188,7 @@ async function init() {
   await listen("motion-state", (event) => pet.classList.toggle("walk", Boolean(event.payload)));
   await listen("sleep-state", (event) => { appSettings.sleeping = Boolean(event.payload); applySettings(); });
   await listen("snap-state", () => { $("#snap-toast").classList.remove("hidden"); setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200); });
-  await listen("play-exit", () => { panel.classList.add("hidden"); alarmOverlay.classList.add("hidden"); pet.classList.add("hidden"); showCelestial("moon", true); });
+  await listen("play-exit", () => { panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("hidden"); showCelestial("moon", true); });
   const snapshot = await invoke("get_state"); appSettings = { ...appSettings, ...snapshot.settings }; $("#autostart").checked = snapshot.autostart;
   applySettings(); renderAlarms();
   const next = new Date(Date.now() + 3600000); $("#alarm-time").value = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
