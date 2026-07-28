@@ -17,13 +17,14 @@ jobs:
     name: Windows x64 portable
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run frontend:build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npx tauri build --no-bundle
       - name: Prepare portable executable
@@ -50,13 +51,14 @@ jobs:
             suffix: Intel
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run frontend:build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build ad-hoc signed app bundle
         env:
