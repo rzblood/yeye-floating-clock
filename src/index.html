@@ -9,26 +9,34 @@
 </head>
 <body>
   <main id="stage" data-weather="clear" aria-label="椰椰桌面宠物">
+    <svg class="glass-filter-defs" aria-hidden="true">
+      <defs>
+        <filter id="liquid-specular" x="-20%" y="-30%" width="140%" height="160%">
+          <feTurbulence type="fractalNoise" baseFrequency=".012 .035" numOctaves="2" seed="7" result="noise"/>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="12" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+      </defs>
+    </svg>
     <div class="edge-glow"></div>
     <header class="hud">
       <button id="clock-card" class="glass clock-card" title="打开设置">
         <span id="time">00:00:00</span><span id="date">正在唤醒椰椰…</span>
       </button>
       <button id="weather-chip" class="glass weather-chip" title="刷新天气">
-        <span id="weather-icon">◌</span><span id="weather-temp">--°</span>
+        <img id="weather-icon" src="assets/weather/partly-cloudy-day.svg" alt=""><span id="weather-temp">--°</span>
       </button>
     </header>
 
-    <div id="celestial" class="celestial hidden" aria-hidden="true">
-      <div class="celestial-halo"></div>
-      <img id="celestial-image" src="assets/sun-reference.png" alt="">
-      <div class="celestial-feet"><i></i><i></i></div>
-    </div>
-
     <section id="pet" class="pet" aria-label="紫色番薯桌面宠物">
-      <img class="pet-body" src="assets/pet-puppet-body.png" alt="">
-      <img class="pet-arm pet-arm-left" src="assets/pet-cute-left-arm.png" alt="">
-      <img class="pet-arm pet-arm-right" src="assets/pet-cute-right-arm.png" alt="">
+      <span class="pet-joint pet-joint-left"><img src="assets/puppet/left-joint.png" alt=""></span>
+      <span class="pet-joint pet-joint-right"><img src="assets/puppet/right-joint.png" alt=""></span>
+      <span class="pet-arm-slot pet-arm-left" aria-hidden="true">
+        <img class="arm-sprite arm-upper" src="assets/puppet/left-upper.png" alt="">
+      </span>
+      <span class="pet-arm-slot pet-arm-right" aria-hidden="true">
+        <img class="arm-sprite arm-upper" src="assets/puppet/left-upper.png" alt="">
+      </span>
+      <img class="pet-body" src="assets/pet-body-no-arms.png" alt="">
     </section>
 
     <div id="speech" class="speech hidden"></div>
@@ -51,9 +59,12 @@
         </section>
         <section class="setting-section">
           <h2>外观与行为</h2>
-          <label class="range-row"><span>大小 <b id="scale-value">82%</b></span><input id="pet-scale" type="range" min="65" max="125" value="82"></label>
-          <label class="range-row"><span>透明度 <b id="opacity-value">100%</b></span><input id="pet-opacity" type="range" min="45" max="100" value="100"></label>
-          <label class="switch-row"><span>窗口吸附</span><input id="snap-enabled" type="checkbox" checked></label>
+          <label class="range-row"><span>桌宠大小 <b id="scale-value">82%</b></span><input id="pet-scale" type="range" min="50" max="125" value="82"></label>
+          <label class="range-row"><span>面板透明度 <b id="panel-opacity-value">94%</b></span><input id="panel-opacity" type="range" min="10" max="100" value="94"></label>
+          <label class="select-row"><span>窗口层级</span><select id="window-level"><option value="top">始终置顶</option><option value="desktop">桌面层级</option></select></label>
+          <label class="switch-row"><span>自由漫游</span><input id="free-roam-enabled" type="checkbox" checked></label>
+          <label class="switch-row"><span>攀爬 / 停靠窗口</span><input id="snap-enabled" type="checkbox" checked></label>
+          <label class="switch-row"><span>边缘探头</span><input id="edge-hide-enabled" type="checkbox"></label>
           <label class="switch-row"><span>安静休息</span><input id="pause-motion" type="checkbox"></label>
           <label class="switch-row"><span>镜像显示</span><input id="mirror-pet" type="checkbox"></label>
           <label class="switch-row"><span>开机启动</span><input id="autostart" type="checkbox"></label>
@@ -62,16 +73,17 @@
           <h2>天气与时间</h2>
           <div class="weather-form"><input id="weather-city" maxlength="40" placeholder="城市，例如：上海"><button id="refresh-weather" type="button" class="secondary">更新</button></div>
           <label class="switch-row"><span>显示天气</span><input id="weather-enabled" type="checkbox" checked></label>
+          <label class="switch-row"><span>液态玻璃时钟与天气</span><input id="liquid-glass" type="checkbox" checked></label>
           <div id="weather-detail" class="weather-detail">尚未获取天气</div>
           <div class="sync-row"><span id="sync-status">使用系统时间</span><button id="sync-now" type="button" class="text-button">立即对时</button></div>
           <small class="attribution">天气数据：Open‑Meteo · 每 30 分钟更新</small>
         </section>
       </div>
-      <footer class="panel-footer"><span id="app-status">Tauri 2 · 轻量模式</span><button id="quit" class="danger-button">退出椰椰</button></footer>
+      <footer class="panel-footer"><span id="app-status">0.2.0 · Tauri 2</span><button id="quit" class="danger-button">退出椰椰</button></footer>
     </section>
 
     <section id="alarm-overlay" class="panel alarm hidden" role="alert">
-      <span class="alarm-sun">☀</span><strong id="alarm-title">闹钟时间到</strong><p>椰椰来叫你啦</p>
+      <span class="alarm-bell">♪</span><strong id="alarm-title">闹钟时间到</strong><p>椰椰来叫你啦</p>
       <div class="alarm-actions"><button id="snooze" class="secondary">5 分钟后</button><button id="stop-alarm" class="primary">知道了</button></div>
     </section>
   </main>

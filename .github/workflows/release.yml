@@ -39,9 +39,11 @@ jobs:
 
   macos:
     name: macOS Apple Silicon
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -53,7 +55,7 @@ jobs:
       - name: Build ad-hoc signed app bundle
         env:
           APPLE_SIGNING_IDENTITY: "-"
-        run: npx tauri build
+        run: npx tauri build --bundles app
       - name: Prepare portable app archive
         run: |
           mkdir -p artifacts

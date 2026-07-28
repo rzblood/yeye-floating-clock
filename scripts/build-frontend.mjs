@@ -8,11 +8,7 @@ const assets = join(root, "assets");
 const output = join(root, "frontend-dist");
 
 const runtimeAssets = [
-  "pet-puppet-body.png",
-  "pet-cute-left-arm.png",
-  "pet-cute-right-arm.png",
-  "sun-reference.png",
-  "moon-reference.png",
+  "pet-body-no-arms.png",
 ];
 
 await rm(output, { recursive: true, force: true });
@@ -26,4 +22,10 @@ for (const name of await readdir(source)) {
 
 for (const name of runtimeAssets) {
   await cp(join(assets, name), join(output, "assets", name));
+}
+
+await cp(join(assets, "weather"), join(output, "assets", "weather"), { recursive: true });
+await mkdir(join(output, "assets", "puppet"), { recursive: true });
+for (const name of ["left-upper.png", "left-joint.png", "right-joint.png"]) {
+  await cp(join(assets, "puppet", name), join(output, "assets", "puppet", name));
 }
