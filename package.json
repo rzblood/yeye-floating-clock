@@ -1,7 +1,7 @@
 {
-  "name": "yeye-desktop-pet-clock",
+  "name": "yeye-floating-clock",
   "version": "0.2.0",
-  "description": "Small cross-platform desktop clock, alarm, weather card and interactive pet",
+  "description": "Small cross-platform floating clock, alarm, weather card and interactive companion",
   "author": "rzblood",
   "license": "MIT",
   "scripts": {

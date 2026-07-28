@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "椰椰桌面时钟",
+  "productName": "椰椰悬浮时钟",
   "version": "0.2.0",
   "identifier": "com.rzblood.yeye.desktopclock",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "椰椰桌面时钟",
+        "title": "椰椰悬浮时钟",
         "width": 282,
         "height": 344,
         "minWidth": 172,
@@ -37,8 +37,8 @@
     "active": true,
     "targets": ["app"],
     "category": "Utility",
-    "shortDescription": "透明桌面时钟、天气、闹钟与互动桌宠",
-    "longDescription": "一款轻量、透明、可调大小的桌面时钟与互动桌宠。",
+    "shortDescription": "透明悬浮时钟、天气、闹钟与互动角色",
+    "longDescription": "一款轻量、透明、可调大小的悬浮时钟与互动角色。",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

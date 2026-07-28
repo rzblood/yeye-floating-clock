@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          Copy-Item "src-tauri/target/release/yeye-desktop-pet-clock.exe" "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-Windows-x64-Portable.exe"
+          Copy-Item "src-tauri/target/release/yeye-floating-clock.exe" "artifacts/Yeye-Floating-Clock-${{ env.RELEASE_VERSION }}-Windows-x64-Portable.exe"
       - uses: actions/upload-artifact@v6
         with:
           name: windows-x64-portable
@@ -60,8 +60,8 @@ jobs:
         run: |
           mkdir -p artifacts
           ditto -c -k --sequesterRsrc --keepParent \
-            "src-tauri/target/release/bundle/macos/椰椰桌面时钟.app" \
-            "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-macOS-Apple-Silicon.app.zip"
+            "src-tauri/target/release/bundle/macos/椰椰悬浮时钟.app" \
+            "artifacts/Yeye-Floating-Clock-${{ env.RELEASE_VERSION }}-macOS-Apple-Silicon.app.zip"
       - uses: actions/upload-artifact@v6
         with:
           name: macos-Apple-Silicon
@@ -82,4 +82,5 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "椰椰桌面时钟 ${{ github.ref_name }}"
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes --title "Yeye Floating Clock ${{ github.ref_name }}"

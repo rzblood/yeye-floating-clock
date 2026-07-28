@@ -1174,7 +1174,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &settings, &quiet, &quit])?;
     let icon = app.default_window_icon().cloned();
     let mut tray = TrayIconBuilder::with_id("yeye")
-        .tooltip("椰椰桌面时钟")
+        .tooltip("椰椰悬浮时钟")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -1254,7 +1254,7 @@ pub fn run() {
             let config_path = app
                 .path()
                 .app_config_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("yeye-desktop-pet"))
+                .unwrap_or_else(|_| std::env::temp_dir().join("yeye-floating-clock"))
                 .join("settings.json");
             let settings = load_settings(&config_path);
             let obstacles = Arc::new(Mutex::new(Vec::new()));
@@ -1328,7 +1328,7 @@ pub fn run() {
             sync_time
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run 椰椰桌面时钟");
+        .expect("failed to run 椰椰悬浮时钟");
 }
 
 #[cfg(test)]

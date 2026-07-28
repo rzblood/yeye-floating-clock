@@ -1,5 +1,5 @@
 [package]
-name = "yeye-desktop-pet-clock"
+name = "yeye-floating-clock"
 version = "0.2.0"
 description = "Small cross-platform desktop clock, weather card and interactive pet"
 authors = ["rzblood"]
@@ -7,7 +7,7 @@ edition = "2021"
 license = "MIT"
 
 [lib]
-name = "yeye_desktop_pet_clock_lib"
+name = "yeye_floating_clock_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
