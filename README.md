@@ -1,10 +1,10 @@
-# Yeye Desktop Clock
+# Yeye Floating Clock
 
-A lightweight transparent desktop pet built with Tauri 2 and Rust. The current preview version is `0.2.0`, supporting Windows 10/11 x64 and Apple Silicon Macs.
+A lightweight transparent desktop companion built with Tauri 2 and Rust. The current preview version is `0.2.0`, supporting Windows 10/11 x64 and Apple Silicon Macs.
 
 ## Features
 
-- Transparent, borderless desktop pet with a 24-hour clock
+- Transparent, borderless floating companion with a 24-hour clock
 - Compact 82% default size, adjustable from 50% to 125%, while the control panel stays at a readable size
 - Control panel opacity adjustable down to 10%
 - Click-to-jump, dragging, free roaming, idle waving, resting, and mirroring
@@ -20,24 +20,24 @@ A lightweight transparent desktop pet built with Tauri 2 and Rust. The current p
 
 ## Download and Run
 
-Download the appropriate file from [GitHub Releases](https://github.com/rzblood/desktop-pet-clock/releases):
+Download the appropriate file from [GitHub Releases](https://github.com/rzblood/yeye-floating-clock/releases):
 
-- Windows x64: `Yeye-Desktop-Clock-*-Windows-x64-Portable.exe` — no installation required.
-- Apple Silicon Mac: `Yeye-Desktop-Clock-*-macOS-Apple-Silicon.app.zip`.
+- Windows x64: `Yeye-Floating-Clock-*-Windows-x64-Portable.exe` — no installation required.
+- Apple Silicon Mac: `Yeye-Floating-Clock-*-macOS-Apple-Silicon.app.zip`.
 
 On macOS, unzip the archive and move the app wherever you prefer. The open-source build is ad-hoc signed rather than distributed with a paid Apple Developer certificate. If macOS blocks the first launch, right-click the app in Finder and choose **Open**.
 
 ## Usage
 
-1. Click the clock above the pet, or right-click the pet, to open the control panel.
-2. Drag the pet to move it; click the pet to make it jump.
+1. Click the clock above Yeye, or right-click the character, to open the control panel.
+2. Drag Yeye to move her; click the character to make her jump.
 3. Use **Appearance & Behavior** to adjust size, window level, free roaming, edge peek, rest mode, mirroring, and launch at login.
 4. Click the weather card to refresh it. The city and other preferences are stored in the system application-config directory.
-5. Use the tray menu to show the pet again, toggle quiet rest mode, or quit.
+5. Use the tray menu to show Yeye again, toggle quiet rest mode, or quit.
 
 ## Window Climbing
 
-The app reads only the position and dimensions of visible windows; it does not read their titles or contents. Drag the pet so its feet are close to the top of a normal window and release it to snap onto the edge. During free roaming, it may also jump onto a window and treat its top edge as a platform.
+The app reads only the position and dimensions of visible windows; it does not read their titles or contents. Drag Yeye so her feet are close to the top of a normal window and release her to snap onto the edge. During free roaming, she may also jump onto a window and treat its top edge as a platform.
 
 ## Local Development
 
