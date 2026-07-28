@@ -76,6 +76,8 @@ struct Settings {
     free_roam_enabled: bool,
     liquid_glass: bool,
     liquid_glass_initialized: bool,
+    #[serde(default)]
+    liquid_glass_default_off_v020_migrated: bool,
     mirrored: bool,
     snap_enabled: bool,
     weather_enabled: bool,
@@ -92,8 +94,9 @@ impl Default for Settings {
             desktop_level: false,
             edge_hide_enabled: false,
             free_roam_enabled: true,
-            liquid_glass: true,
+            liquid_glass: false,
             liquid_glass_initialized: true,
+            liquid_glass_default_off_v020_migrated: true,
             mirrored: false,
             snap_enabled: true,
             weather_enabled: true,
@@ -110,6 +113,14 @@ struct Obstacle {
     height: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct WallAttachment {
+    side: i8,
+    x: f64,
+    min_y: f64,
+    max_y: f64,
+}
+
 #[derive(Clone, Debug)]
 struct Motion {
     vx: f64,
@@ -119,6 +130,7 @@ struct Motion {
     next_decision: Instant,
     facing_left: bool,
     walking: bool,
+    wall: Option<WallAttachment>,
 }
 
 impl Default for Motion {
@@ -131,6 +143,7 @@ impl Default for Motion {
             next_decision: Instant::now() + Duration::from_secs(2),
             facing_left: false,
             walking: false,
+            wall: None,
         }
     }
 }
@@ -174,8 +187,12 @@ struct WeatherReport {
 
 fn sanitize_settings(mut settings: Settings) -> Settings {
     if !settings.liquid_glass_initialized {
-        settings.liquid_glass = true;
+        settings.liquid_glass = false;
         settings.liquid_glass_initialized = true;
+    }
+    if !settings.liquid_glass_default_off_v020_migrated {
+        settings.liquid_glass = false;
+        settings.liquid_glass_default_off_v020_migrated = true;
     }
     settings.scale = settings.scale.clamp(0.50, 1.25);
     settings.panel_opacity = settings.panel_opacity.clamp(0.10, 1.0);
@@ -479,10 +496,15 @@ fn set_sleeping(value: bool, data: State<AppData>) -> Result<(), String> {
 
 #[tauri::command]
 fn start_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
-    data.motion
-        .lock()
-        .map_err(|_| "运动状态不可用".to_string())?
-        .dragging = true;
+    {
+        let mut motion = data
+            .motion
+            .lock()
+            .map_err(|_| "运动状态不可用".to_string())?;
+        motion.dragging = true;
+        motion.wall = None;
+    }
+    let _ = window.emit("wall-state", "none");
     let drag_started_ms = epoch_ms();
     data.last_drag_move_ms
         .store(drag_started_ms, Ordering::Relaxed);
@@ -513,7 +535,11 @@ fn start_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String>
             .map(|settings| settings.snap_enabled)
             .unwrap_or(true)
         {
-            let _ = snap_to_nearest_window(&drag_window, &data.obstacles);
+            if let Ok(wall) = snap_to_nearest_window(&drag_window, &data.obstacles) {
+                if let Ok(mut motion) = data.motion.lock() {
+                    motion.wall = wall;
+                }
+            }
         }
         break;
     });
@@ -540,19 +566,29 @@ fn end_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
         .map(|settings| settings.snap_enabled)
         .unwrap_or(true)
     {
-        snap_to_nearest_window(&window, &data.obstacles)?;
+        let wall = snap_to_nearest_window(&window, &data.obstacles)?;
+        if let Ok(mut motion) = data.motion.lock() {
+            motion.wall = wall;
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
-fn jump(data: State<AppData>) -> Result<(), String> {
+fn jump(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
     let mut motion = data
         .motion
         .lock()
         .map_err(|_| "运动状态不可用".to_string())?;
+    let wall_side = motion.wall.take().map(|wall| wall.side).unwrap_or(0);
+    motion.vx = match wall_side {
+        1 => -240.0,
+        -1 => 240.0,
+        _ => motion.vx,
+    };
     motion.vy = -520.0;
     motion.grounded = false;
+    let _ = window.emit("wall-state", "none");
     Ok(())
 }
 
@@ -767,34 +803,100 @@ async fn sync_time(data: State<'_, AppData>) -> Result<i64, String> {
 fn snap_to_nearest_window(
     window: &WebviewWindow,
     obstacles: &Arc<Mutex<Vec<Obstacle>>>,
-) -> Result<(), String> {
+) -> Result<Option<WallAttachment>, String> {
     let position = window.outer_position().map_err(|error| error.to_string())?;
     let size = window.outer_size().map_err(|error| error.to_string())?;
     let left = position.x as f64;
     let right = left + size.width as f64;
+    let top = position.y as f64;
     let bottom = position.y as f64 + size.height as f64;
-    let mut best: Option<(f64, f64)> = None;
+    let visible_inset = size.width as f64 * 0.075;
+    let visible_left = left + visible_inset;
+    let visible_right = right - visible_inset;
+    let mut best_top: Option<(f64, f64)> = None;
+    let mut best_wall: Option<(f64, WallAttachment, f64)> = None;
 
     if let Ok(obstacles) = obstacles.lock() {
         for obstacle in obstacles.iter() {
             let overlap = right.min(obstacle.x + obstacle.width) - left.max(obstacle.x);
-            if overlap < size.width.min(100) as f64 * 0.28 {
+            if overlap >= size.width.min(100) as f64 * 0.28 {
+                let distance = (bottom - obstacle.y).abs();
+                if distance <= 24.0 && best_top.map(|(best, _)| distance < best).unwrap_or(true) {
+                    best_top = Some((distance, obstacle.y - size.height as f64));
+                }
+            }
+
+            let obstacle_bottom = obstacle.y + obstacle.height;
+            let vertical_overlap = bottom.min(obstacle_bottom) - top.max(obstacle.y);
+            let min_overlap = (size.height as f64 * 0.30).min(110.0);
+            if vertical_overlap < min_overlap {
                 continue;
             }
-            let distance = (bottom - obstacle.y).abs();
-            if distance <= 24.0 && best.map(|(best, _)| distance < best).unwrap_or(true) {
-                best = Some((distance, obstacle.y - size.height as f64));
+            let min_y = obstacle.y - size.height as f64 * 0.18;
+            let max_y = obstacle_bottom - size.height as f64 * 0.82;
+            if max_y < min_y {
+                continue;
+            }
+            let obstacle_right = obstacle.x + obstacle.width;
+            let candidates = [
+                (
+                    (visible_right - obstacle.x).abs(),
+                    WallAttachment {
+                        side: 1,
+                        x: obstacle.x - size.width as f64 + visible_inset,
+                        min_y,
+                        max_y,
+                    },
+                ),
+                (
+                    (visible_left - obstacle_right).abs(),
+                    WallAttachment {
+                        side: -1,
+                        x: obstacle_right - visible_inset,
+                        min_y,
+                        max_y,
+                    },
+                ),
+            ];
+            for (distance, wall) in candidates {
+                if distance <= 28.0
+                    && best_wall
+                        .map(|(best, _, _)| distance < best)
+                        .unwrap_or(true)
+                {
+                    best_wall = Some((distance, wall, top.clamp(min_y, max_y)));
+                }
             }
         }
     }
 
-    if let Some((_, y)) = best {
+    let top_distance = best_top.map(|(distance, _)| distance);
+    if let Some((wall_distance, wall, y)) = best_wall {
+        if top_distance
+            .map(|distance| wall_distance < distance)
+            .unwrap_or(true)
+        {
+            window
+                .set_position(PhysicalPosition::new(
+                    wall.x.round() as i32,
+                    y.round() as i32,
+                ))
+                .map_err(|error| error.to_string())?;
+            let side = if wall.side > 0 { "right" } else { "left" };
+            let _ = window.emit("wall-state", side);
+            let _ = window.emit("snap-state", "wall");
+            return Ok(Some(wall));
+        }
+    }
+
+    if let Some((_, y)) = best_top {
         window
             .set_position(PhysicalPosition::new(position.x, y.round() as i32))
             .map_err(|error| error.to_string())?;
-        let _ = window.emit("snap-state", true);
+        let _ = window.emit("wall-state", "none");
+        let _ = window.emit("snap-state", "top");
     }
-    Ok(())
+    Ok(None)
 }
 
 fn hide_near_screen_edge(window: &WebviewWindow, data: &AppData) -> Result<bool, String> {
@@ -1028,6 +1130,48 @@ fn spawn_motion_loop(app: AppHandle) {
             };
             if motion.dragging || !window.is_visible().unwrap_or(false) {
                 continue;
+            }
+
+            if let Some(wall) = motion.wall {
+                if !settings.snap_enabled {
+                    motion.wall = None;
+                    motion.vy = 0.0;
+                    let _ = window.emit("wall-state", "none");
+                } else {
+                    if settings.sleeping || !settings.free_roam_enabled {
+                        motion.vy = 0.0;
+                    } else if now >= motion.next_decision {
+                        let mut rng = rand::rng();
+                        motion.next_decision =
+                            now + Duration::from_millis(rng.random_range(1800..4200));
+                        motion.vy = if rng.random_bool(0.5) { -38.0 } else { 38.0 };
+                    }
+                    let current_y = window
+                        .outer_position()
+                        .map(|position| position.y as f64)
+                        .unwrap_or(wall.min_y);
+                    let mut next_y = current_y + motion.vy * dt;
+                    if next_y <= wall.min_y {
+                        next_y = wall.min_y;
+                        motion.vy = motion.vy.abs();
+                    } else if next_y >= wall.max_y {
+                        next_y = wall.max_y;
+                        motion.vy = -motion.vy.abs();
+                    }
+                    motion.vx = 0.0;
+                    motion.grounded = false;
+                    let crawling =
+                        motion.vy.abs() >= 5.0 && !settings.sleeping && settings.free_roam_enabled;
+                    if crawling != motion.walking {
+                        motion.walking = crawling;
+                        let _ = window.emit("motion-state", crawling);
+                    }
+                    let _ = window.set_position(PhysicalPosition::new(
+                        wall.x.round() as i32,
+                        next_y.round() as i32,
+                    ));
+                    continue;
+                }
             }
 
             if settings.sleeping || !settings.free_roam_enabled {
@@ -1365,5 +1509,26 @@ mod tests {
         let value = sanitize_settings(value);
         assert_eq!(value.alarms.len(), 30);
         assert_eq!(value.city.chars().count(), 40);
+    }
+
+    #[test]
+    fn liquid_glass_is_disabled_during_default_migration() {
+        let value = Settings {
+            liquid_glass: true,
+            liquid_glass_default_off_v020_migrated: false,
+            ..Settings::default()
+        };
+        let value = sanitize_settings(value);
+        assert!(!value.liquid_glass);
+        assert!(value.liquid_glass_default_off_v020_migrated);
+    }
+
+    #[test]
+    fn old_saved_settings_receive_the_liquid_glass_migration() {
+        let value: Settings =
+            serde_json::from_str(r#"{"liquidGlass":true,"liquidGlassInitialized":true}"#)
+                .expect("old settings should deserialize");
+        assert!(!value.liquid_glass_default_off_v020_migrated);
+        assert!(!sanitize_settings(value).liquid_glass);
     }
 }
