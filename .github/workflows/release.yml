@@ -38,18 +38,8 @@ jobs:
           path: artifacts/*
 
   macos:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-latest
-            name: macOS Apple Silicon
-            suffix: Apple-Silicon
-          - runner: macos-15-intel
-            name: macOS Intel
-            suffix: Intel
-    runs-on: ${{ matrix.runner }}
+    name: macOS Apple Silicon
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -69,10 +59,10 @@ jobs:
           mkdir -p artifacts
           ditto -c -k --sequesterRsrc --keepParent \
             "src-tauri/target/release/bundle/macos/椰椰桌面时钟.app" \
-            "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-macOS-${{ matrix.suffix }}.app.zip"
+            "artifacts/Yeye-Desktop-Clock-${{ env.RELEASE_VERSION }}-macOS-Apple-Silicon.app.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.suffix }}
+          name: macos-Apple-Silicon
           path: artifacts/*
 
   release:
