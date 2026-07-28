@@ -29,7 +29,7 @@ const BASE_HEIGHT: f64 = 418.0;
 const PANEL_WIDTH: f64 = 390.0;
 const PANEL_HEIGHT: f64 = 520.0;
 const GRAVITY: f64 = 760.0;
-const SNAP_DISTANCE: f64 = 34.0;
+const SNAP_DISTANCE: f64 = 14.0;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +109,7 @@ struct AppData {
     obstacles: Arc<Mutex<Vec<Obstacle>>>,
     quitting: Arc<AtomicBool>,
     panel_open: AtomicBool,
+    last_drag_move_ms: AtomicI64,
     time_offset_ms: AtomicI64,
     config_path: PathBuf,
 }
@@ -202,24 +203,39 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     .map_err(|error| error.to_string())
 }
 
-fn resize_anchored(window: &WebviewWindow, width: f64, height: f64) -> Result<(), String> {
+fn epoch_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+fn resize_anchored(
+    window: &WebviewWindow,
+    width: f64,
+    height: f64,
+    screen_margin: i32,
+) -> Result<(), String> {
     let old_position = window.outer_position().ok();
     let old_size = window.outer_size().ok();
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let new_width = (width * scale_factor).round() as i32;
+    let new_height = (height * scale_factor).round() as i32;
     window
         .set_size(LogicalSize::new(width, height))
         .map_err(|error| error.to_string())?;
 
-    if let (Some(position), Some(old_size), Ok(new_size)) =
-        (old_position, old_size, window.outer_size())
-    {
-        let mut x = position.x + old_size.width as i32 - new_size.width as i32;
-        let mut y = position.y + old_size.height as i32 - new_size.height as i32;
+    if let (Some(position), Some(old_size)) = (old_position, old_size) {
+        let mut x = position.x + old_size.width as i32 - new_width;
+        let mut y = position.y + old_size.height as i32 - new_height;
         if let Ok(Some(monitor)) = window.current_monitor() {
             let area = monitor.work_area();
-            let max_x = area.position.x + area.size.width as i32 - new_size.width as i32;
-            let max_y = area.position.y + area.size.height as i32 - new_size.height as i32;
-            x = x.clamp(area.position.x, max_x.max(area.position.x));
-            y = y.clamp(area.position.y, max_y.max(area.position.y));
+            let min_x = area.position.x + screen_margin;
+            let min_y = area.position.y + screen_margin;
+            let max_x = area.position.x + area.size.width as i32 - new_width - screen_margin;
+            let max_y = area.position.y + area.size.height as i32 - new_height - screen_margin;
+            x = x.clamp(min_x, max_x.max(min_x));
+            y = y.clamp(min_y, max_y.max(min_y));
         }
         window
             .set_position(PhysicalPosition::new(x, y))
@@ -239,7 +255,7 @@ fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Res
         settings.scale = scale;
     }
     if !data.panel_open.load(Ordering::Relaxed) {
-        resize_anchored(&window, BASE_WIDTH * scale, BASE_HEIGHT * scale)?;
+        resize_anchored(&window, BASE_WIDTH * scale, BASE_HEIGHT * scale, 0)?;
     }
     persist_settings(&data)?;
     Ok(scale)
@@ -248,7 +264,18 @@ fn set_pet_scale(window: WebviewWindow, value: f64, data: State<AppData>) -> Res
 #[tauri::command]
 fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Result<(), String> {
     let (width, height) = if open {
-        (PANEL_WIDTH, PANEL_HEIGHT)
+        if let Ok(Some(monitor)) = window.current_monitor() {
+            let scale_factor = monitor.scale_factor();
+            let area = monitor.work_area();
+            let available_width = area.size.width as f64 / scale_factor - 24.0;
+            let available_height = area.size.height as f64 / scale_factor - 24.0;
+            (
+                PANEL_WIDTH.min(available_width.max(300.0)),
+                PANEL_HEIGHT.min(available_height.max(360.0)),
+            )
+        } else {
+            (PANEL_WIDTH, PANEL_HEIGHT)
+        }
     } else {
         let scale = data
             .settings
@@ -257,7 +284,7 @@ fn set_panel_open(window: WebviewWindow, open: bool, data: State<AppData>) -> Re
             .unwrap_or(0.82);
         (BASE_WIDTH * scale, BASE_HEIGHT * scale)
     };
-    resize_anchored(&window, width, height)?;
+    resize_anchored(&window, width, height, if open { 12 } else { 0 })?;
     data.panel_open.store(open, Ordering::Relaxed);
     Ok(())
 }
@@ -283,25 +310,39 @@ fn start_drag(window: WebviewWindow, data: State<AppData>) -> Result<(), String>
         .lock()
         .map_err(|_| "运动状态不可用".to_string())?
         .dragging = true;
-    let result = window.start_dragging().map_err(|error| error.to_string());
-    {
-        let mut motion = data
-            .motion
+    let drag_started_ms = epoch_ms();
+    data.last_drag_move_ms
+        .store(drag_started_ms, Ordering::Relaxed);
+
+    let app = window.app_handle().clone();
+    let drag_window = window.clone();
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(80));
+        let data = app.state::<AppData>();
+        let current_ms = epoch_ms();
+        let last_move_ms = data.last_drag_move_ms.load(Ordering::Relaxed);
+        let has_moved = last_move_ms > drag_started_ms;
+        if (!has_moved && current_ms - drag_started_ms < 3_000)
+            || (has_moved && current_ms - last_move_ms < 240)
+        {
+            continue;
+        }
+        if let Ok(mut motion) = data.motion.lock() {
+            motion.dragging = false;
+            motion.vy = 0.0;
+        }
+        if data
+            .settings
             .lock()
-            .map_err(|_| "运动状态不可用".to_string())?;
-        motion.dragging = false;
-        motion.vy = 0.0;
-    }
-    result?;
-    if data
-        .settings
-        .lock()
-        .map(|settings| settings.snap_enabled)
-        .unwrap_or(true)
-    {
-        snap_to_nearest_window(&window, &data.obstacles)?;
-    }
-    Ok(())
+            .map(|settings| settings.snap_enabled)
+            .unwrap_or(true)
+        {
+            let _ = snap_to_nearest_window(&drag_window, &data.obstacles);
+        }
+        break;
+    });
+
+    window.start_dragging().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -354,27 +395,13 @@ fn ready(window: WebviewWindow, data: State<AppData>) -> Result<(), String> {
     let size = window.outer_size().map_err(|error| error.to_string())?;
     let final_x = area.position.x + area.size.width as i32 - size.width as i32 - 28;
     let final_y = area.position.y + area.size.height as i32 - size.height as i32;
-    let start_y = area.position.y + area.size.height as i32 - 24;
     window
-        .set_position(PhysicalPosition::new(final_x, start_y))
+        .set_position(PhysicalPosition::new(final_x, final_y))
         .map_err(|error| error.to_string())?;
     window.show().map_err(|error| error.to_string())?;
-
-    let animated_window = window.clone();
-    let app_handle = window.app_handle().clone();
-    thread::spawn(move || {
-        for frame in 0..72 {
-            let progress = frame as f64 / 71.0;
-            let eased = 1.0 - (1.0 - progress).powi(3);
-            let y = start_y as f64 + (final_y - start_y) as f64 * eased;
-            let _ = animated_window.set_position(PhysicalPosition::new(final_x, y.round() as i32));
-            thread::sleep(Duration::from_millis(16));
-        }
-        let app_data = app_handle.state::<AppData>();
-        if let Ok(mut motion) = app_data.motion.lock() {
-            motion.dragging = false;
-        };
-    });
+    if let Ok(mut motion) = data.motion.lock() {
+        motion.dragging = false;
+    }
     Ok(())
 }
 
@@ -384,26 +411,8 @@ fn request_quit(app: AppHandle, window: WebviewWindow, data: State<AppData>) {
         return;
     }
     let _ = window.emit("play-exit", ());
-    let animated_window = window.clone();
     thread::spawn(move || {
-        thread::sleep(Duration::from_millis(280));
-        if let (Ok(position), Ok(size), Ok(Some(monitor))) = (
-            animated_window.outer_position(),
-            animated_window.outer_size(),
-            animated_window.current_monitor(),
-        ) {
-            let target = monitor.work_area().position.y + monitor.work_area().size.height as i32;
-            let start = position.y;
-            for frame in 0..58 {
-                let progress = frame as f64 / 57.0;
-                let eased = progress.powi(2);
-                let y = start as f64 + (target - start) as f64 * eased;
-                let _ = animated_window
-                    .set_position(PhysicalPosition::new(position.x, y.round() as i32));
-                thread::sleep(Duration::from_millis(16));
-            }
-            let _ = size;
-        }
+        thread::sleep(Duration::from_millis(430));
         app.exit(0);
     });
 }
@@ -585,7 +594,7 @@ fn snap_to_nearest_window(
                 continue;
             }
             let distance = (bottom - obstacle.y).abs();
-            if distance <= 82.0 && best.map(|(best, _)| distance < best).unwrap_or(true) {
+            if distance <= 24.0 && best.map(|(best, _)| distance < best).unwrap_or(true) {
                 best = Some((distance, obstacle.y - size.height as f64));
             }
         }
@@ -911,6 +920,7 @@ pub fn run() {
                 obstacles: obstacles.clone(),
                 quitting: quitting.clone(),
                 panel_open: AtomicBool::new(false),
+                last_drag_move_ms: AtomicI64::new(0),
                 time_offset_ms: AtomicI64::new(0),
                 config_path,
             });
@@ -920,6 +930,17 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Moved(_)) {
+                let data = window.state::<AppData>();
+                if data
+                    .motion
+                    .lock()
+                    .map(|motion| motion.dragging)
+                    .unwrap_or(false)
+                {
+                    data.last_drag_move_ms.store(epoch_ms(), Ordering::Relaxed);
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let data = window.state::<AppData>();
                 if !data.quitting.load(Ordering::Relaxed) {

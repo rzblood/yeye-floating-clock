@@ -20,8 +20,6 @@ const stage = $("#stage");
 const pet = $("#pet");
 const panel = $("#settings");
 const alarmOverlay = $("#alarm-overlay");
-const celestial = $("#celestial");
-const celestialImage = $("#celestial-image");
 
 let appSettings = { alarms: [], sleeping: false, scale: .82, opacity: 1, panelOpacity: .94, mirrored: false, snapEnabled: true, weatherEnabled: true, city: "上海" };
 let networkOffsetMs = 0;
@@ -131,21 +129,15 @@ function beep() {
   gain.gain.setValueAtTime(.0001, audioContext.currentTime); gain.gain.exponentialRampToValueAtTime(.18, audioContext.currentTime + .03); gain.gain.exponentialRampToValueAtTime(.0001, audioContext.currentTime + .42);
   oscillator.connect(gain).connect(audioContext.destination); oscillator.start(); oscillator.stop(audioContext.currentTime + .44);
 }
-function showCelestial(mode, exit = false) {
-  celestial.className = `celestial ${mode}${exit ? " exit" : ""}`;
-  celestialImage.src = mode === "sun" ? "assets/sun-reference.png" : "assets/moon-reference.png";
-}
 function startAlarm(alarm) {
   activeAlarmLabel = alarm?.label || "闹钟时间到"; $("#alarm-title").textContent = activeAlarmLabel;
-  panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); showCelestial("sun"); beep();
+  panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.remove("hidden"); pet.classList.add("hidden"); beep();
   clearInterval(alarmTimer); alarmTimer = setInterval(beep, 1150);
 }
-function stopAlarm() { clearInterval(alarmTimer); alarmOverlay.classList.add("hidden"); celestial.classList.add("hidden"); pet.classList.remove("hidden"); say("好，已经关掉啦。"); }
+function stopAlarm() { clearInterval(alarmTimer); alarmOverlay.classList.add("hidden"); pet.classList.remove("hidden"); say("好，已经关掉啦。"); }
 function intro() {
-  const daytime = now().getHours() >= 6 && now().getHours() < 18;
-  pet.classList.add("hidden"); showCelestial(daytime ? "sun" : "moon");
-  setTimeout(() => { celestial.classList.add("hidden"); pet.classList.remove("hidden"); pet.classList.add("intro"); }, 2480);
-  setTimeout(() => { pet.classList.remove("intro"); say(daytime ? "今天也要闪闪发光！" : "今晚让我陪着你。"); }, 3300);
+  pet.classList.add("intro");
+  setTimeout(() => { pet.classList.remove("intro"); say("椰椰来啦！"); }, 720);
 }
 const openSettings = async () => {
   alarmOverlay.classList.add("hidden");
@@ -188,7 +180,7 @@ async function init() {
   await listen("motion-state", (event) => pet.classList.toggle("walk", Boolean(event.payload)));
   await listen("sleep-state", (event) => { appSettings.sleeping = Boolean(event.payload); applySettings(); });
   await listen("snap-state", () => { $("#snap-toast").classList.remove("hidden"); setTimeout(() => $("#snap-toast").classList.add("hidden"), 1200); });
-  await listen("play-exit", () => { panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("hidden"); showCelestial("moon", true); });
+  await listen("play-exit", () => { panel.classList.add("hidden"); invoke("set_panel_open", { open: false }); alarmOverlay.classList.add("hidden"); pet.classList.add("goodbye"); });
   const snapshot = await invoke("get_state"); appSettings = { ...appSettings, ...snapshot.settings }; $("#autostart").checked = snapshot.autostart;
   applySettings(); renderAlarms();
   const next = new Date(Date.now() + 3600000); $("#alarm-time").value = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;

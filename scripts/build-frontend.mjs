@@ -11,8 +11,6 @@ const runtimeAssets = [
   "pet-puppet-body.png",
   "pet-cute-left-arm.png",
   "pet-cute-right-arm.png",
-  "sun-reference.png",
-  "moon-reference.png",
 ];
 
 await rm(output, { recursive: true, force: true });
@@ -27,6 +25,3 @@ for (const name of await readdir(source)) {
 for (const name of runtimeAssets) {
   await cp(join(assets, name), join(output, "assets", name));
 }
-
-await cp(join(assets, "puppet", "left-joint.png"), join(output, "assets", "shoulder-left.png"));
-await cp(join(assets, "puppet", "right-joint.png"), join(output, "assets", "shoulder-right.png"));

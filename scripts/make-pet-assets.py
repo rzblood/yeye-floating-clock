@@ -1,7 +1,7 @@
 """Build the shorter, layered 椰椰 sprite from the approved transparent source."""
 
 from pathlib import Path
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets" / "pet.png"
@@ -49,7 +49,17 @@ right_arm.paste(source, mask=right_mask)
 
 body = source.copy()
 body_alpha = body.getchannel("A")
-erase = ImageChops.lighter(left_mask, right_mask)
+# Remove only the distal part of each original arm. The retained upper-arm
+# material acts as a soft shoulder socket beneath the animated full-arm layer.
+left_erase = arm_mask(
+    source.size,
+    [(195, 385), (208, 354), (250, 350), (412, 505), (382, 584), (200, 470)],
+)
+right_erase = arm_mask(
+    source.size,
+    [(850, 585), (1002, 402), (1045, 408), (1062, 444), (1051, 510), (884, 650)],
+)
+erase = ImageChops.lighter(left_erase, right_erase).filter(ImageFilter.MinFilter(81))
 body.putalpha(ImageChops.subtract(body_alpha, erase))
 
 layers = [compress_lower(layer) for layer in (body, left_arm, right_arm)]
