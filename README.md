@@ -7,7 +7,7 @@
 - 透明、置顶、无边框的桌面宠物和 24 小时时钟
 - 默认 82% 的紧凑尺寸，可在 65%–125% 之间调节
 - 拖动、跳跃、自动行走、休息、镜像和透明度调节
-- 多关节木偶手臂动画，肩、肘和手掌可独立摆动
+- 重新切分的原画手臂，可从肩部独立自然摆动
 - 启动与退出时，太阳或月亮沿真实屏幕边缘进入和离开
 - 每日闹钟、5 分钟稍后提醒和系统托盘
 - Open‑Meteo 天气（无需 API Key），每 30 分钟更新
@@ -21,7 +21,6 @@
 
 - Windows x64：`Yeye-Desktop-Clock-*-Windows-x64-Portable.exe`，无需安装，双击运行。
 - Apple 芯片 Mac：`Yeye-Desktop-Clock-*-macOS-Apple-Silicon.app.zip`。
-- Intel Mac：`Yeye-Desktop-Clock-*-macOS-Intel.app.zip`。
 
 macOS 下载后解压并把应用拖到任意目录即可。当前开源构建没有付费代码签名，首次打开若被系统拦截，可在 Finder 中右键应用并选择“打开”。
 
@@ -59,7 +58,7 @@ npm run build
 npm run build:bundle
 ```
 
-推送 `v*` 标签会触发 GitHub Actions，为 Windows x64、Apple 芯片 Mac 和 Intel Mac 生成便携包并创建 Release。
+推送 `v*` 标签会触发 GitHub Actions，为 Windows x64 和 Apple 芯片 Mac 生成便携包并创建 Release。
 
 ## 隐私与许可
 
