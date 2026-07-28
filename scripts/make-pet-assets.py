@@ -1,7 +1,7 @@
 """Build the shorter, layered 椰椰 sprite from the approved transparent source."""
 
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "assets" / "pet.png"
@@ -47,9 +47,10 @@ right_arm = Image.new("RGBA", source.size, (0, 0, 0, 0))
 left_arm.paste(source, mask=left_mask)
 right_arm.paste(source, mask=right_mask)
 
-# Keep the complete silhouette underneath. The moving arm layers use a subtle
-# rotation on top, which avoids transparent cracks at the plush shoulder seams.
 body = source.copy()
+body_alpha = body.getchannel("A")
+erase = ImageChops.lighter(left_mask, right_mask)
+body.putalpha(ImageChops.subtract(body_alpha, erase))
 
 layers = [compress_lower(layer) for layer in (body, left_arm, right_arm)]
 combined_alpha = Image.new("L", layers[0].size, 0)
@@ -67,7 +68,7 @@ bbox = (
     min(layers[0].height, bbox[3] + PADDING),
 )
 
-names = ("pet-cute-body.png", "pet-cute-left-arm.png", "pet-cute-right-arm.png")
+names = ("pet-puppet-body.png", "pet-cute-left-arm.png", "pet-cute-right-arm.png")
 for layer, name in zip(layers, names):
     layer.crop(bbox).save(OUT_DIR / name)
 

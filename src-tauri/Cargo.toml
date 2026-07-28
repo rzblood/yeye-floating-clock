@@ -1,0 +1,32 @@
+[package]
+name = "yeye-desktop-pet-clock"
+version = "2.0.0"
+description = "Small cross-platform desktop clock, weather card and interactive pet"
+authors = ["rzblood"]
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "yeye_desktop_pet_clock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+chrono = "0.4.42"
+httpdate = "1.0.3"
+rand = "0.9.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.11.5", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-single-instance = "2.4.3"
+ureq = { version = "3.3.0", features = ["json"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
